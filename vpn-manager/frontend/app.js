@@ -1234,10 +1234,8 @@ async function initConfigPage() {
         }
 
         if (needRerender) {
-          renderRouterList();
-          if (field.id === "routerName") {
-            formTitleNode.textContent = router.name || "Настройка роутера";
-          }
+          renderAll();
+          formTitleNode.textContent = router.name || "Настройка роутера";
         }
 
         await refreshPreview();
