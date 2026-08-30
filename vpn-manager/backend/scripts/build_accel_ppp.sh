@@ -182,7 +182,6 @@ cat > /etc/accel-ppp/accel-ppp.conf << EOF
 log_file
 sstp
 auth_pap
-ctrl
 
 [core]
 log-error=/var/log/accel-ppp/core.log
