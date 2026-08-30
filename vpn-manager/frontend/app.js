@@ -890,7 +890,7 @@ async function initConfigPage() {
       if (p.routers) allRouters.push(...p.routers);
     }
     if (allRouters.length > 0) {
-      await Promise.all(allRouters.map((r) => ensureMigratedAndPersisted(r)));
+      allRouters.forEach((r) => ensureMigratedAndPersisted(r, { save: true }));
     }
 
     if (state.profiles.length === 0) {
@@ -962,8 +962,8 @@ async function initConfigPage() {
     }
   }
 
-  async function renderAll() {
-    await ensureMigratedAndPersisted(getActiveRouter());
+  function renderAll() {
+    ensureMigratedAndPersisted(getActiveRouter(), { save: true });
     renderTabs();
     renderProfileSelect();
     renderRouterList();
@@ -1300,21 +1300,36 @@ async function initConfigPage() {
     }
   }
 
-  async function ensureMigratedAndPersisted(router) {
+  function ensureMigratedAndPersisted(router, { save = true } = {}) {
     if (!router) return;
-    const schemaFields = state.schema && state.schema.fields;
+    const schemaFields = state?.schema?.fields;
     if (!Array.isArray(schemaFields)) return;
     const raw = router.values || {};
     const merged = mergeSchemaDefaults(raw, schemaFields);
-    if (valuesEqual(raw, merged)) return;
-    router.values = merged;
-    if (!router.id) return;
-    try {
-      await apiFetch(`/api/profiles/${getActiveProfile().id}/routers/${router.id}`, {
-        method: "PUT",
-        body: JSON.stringify({ name: router.name, values: merged }),
+    if (!valuesEqual(raw, merged)) {
+      router.values = merged;
+    }
+    if (!save || !router.id) return;
+    const profileId = getActiveProfileNoThrow()?.id;
+    if (!profileId) return;
+    if (router._migrating) return;
+    router._migrating = true;
+    apiFetch(`/api/profiles/${profileId}/routers/${router.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name: router.name, values: merged }),
+    })
+      .catch(() => {})
+      .finally(() => {
+        router._migrating = false;
       });
-    } catch (_err) {}
+  }
+
+  function getActiveProfileNoThrow() {
+    try {
+      return getActiveProfile();
+    } catch {
+      return null;
+    }
   }
 
   async function refreshPreview() {
