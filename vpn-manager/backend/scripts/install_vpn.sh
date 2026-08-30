@@ -290,20 +290,27 @@ ok "/etc/ppp/options.xl2tpd written"
 if [ "$SSTP_OK" = "yes" ]; then
 echo ""
 echo "=========================================="
-echo "  Configuring accel-ppp (SSTP) — listen on $VPN_PUBLIC_IP:443"
+echo "  Configuring accel-ppp (SSTP) — listen on 0.0.0.0:443 (inbound iptables restricted to $VPN_PUBLIC_IP only)"
 echo "=========================================="
-mkdir -p /etc/accel-ppp /var/log/accel-ppp /etc/accel-ppp/conf
+mkdir -p /etc/accel-ppp /var/log/accel-ppp /etc/accel-ppp/conf /run/accel-ppp
+# NOTE: Use SAME /24 subnet as L2TP xl2tpd gateway (10.255.0.x) to avoid ippool cann't parse error.
+SSTP_LOCAL_IP="10.255.0.1"
+SSTP_POOL_START="10.255.0.240"
+SSTP_POOL_END="10.255.0.250"
 cat > /etc/accel-ppp.conf << EOF
 [modules]
 log_file
 sstp
-auth
-chap-msv2
-ippool
+auth_pap
+ctrl
 
 [core]
 log-error=/var/log/accel-ppp/core.log
-thread-count=4
+thread-count=1
+die-on-modload-error=no
+max-sessions=200
+max-async-sessions=200
+max-sync-sessions=200
 
 [common]
 single-session=replace
@@ -315,43 +322,48 @@ log-file=/var/log/accel-ppp/accel-ppp.log
 log-emerg=/var/log/accel-ppp/emerg.log
 log-fail-file=/var/log/accel-ppp/auth-fail.log
 copy=3
-color=1
-default=error
+default=debug
 
 [ppp]
-verbose=1
+verbose=3
 min-mtu=1280
-mtu=1420
-mru=1420
+mtu=1400
+mru=1400
 ipv4=require
 ipv6=deny
-mtu-disc=yes
-lcp-echo-failure=4
-lcp-echo-interval=30
+check-ip=0
 
 [dns]
 dns1=$DNS1
 dns2=$DNS2
 
 [sstp]
-host=$VPN_PUBLIC_IP
+host=0.0.0.0
 port=443
-verbose=1
+verbose=3
+certificate=/etc/accel-ppp/certs/sstp.crt
+private-key=/etc/accel-ppp/certs/sstp.key
 
 [ip-pool]
-gw-ip-address=10.255.1.1
-10.255.1.100-10.255.1.200
+gw-ip-address=$SSTP_LOCAL_IP
+$SSTP_POOL_START-$SSTP_POOL_END
 
-[chap-msv2]
+[ctrl]
+# IMPORTANT: localhost only — never expose ctrl socket to public internet.
+# Usage: accel-cmd -H 127.0.0.1 -P 2001 show sessions
+type=tcp
+host=127.0.0.1:2001
 
 [auth]
+# Strict auth using shared chap-secrets with xl2tpd (same users for L2TP and SSTP).
+# chap-secrets/auth_mschap_v2 modules cause SIGSEGV on accel-ppp 1.12.0 Ubuntu 22.04
+# so we use auth_pap built-in secrets loader instead — it is safe.
 any-login=0
-noauth=0
 secrets=/etc/accel-ppp/conf/chap-secrets
 EOF
 touch /etc/accel-ppp/conf/chap-secrets
 chmod 600 /etc/accel-ppp/conf/chap-secrets
-ok "/etc/accel-ppp.conf written (SSTP on $VPN_PUBLIC_IP:443)"
+ok "/etc/accel-ppp.conf written (SSTP on 0.0.0.0:443, iptables locked to $VPN_PUBLIC_IP; ctrl 127.0.0.1:2001; strict auth via secrets)"
 fi
 
 echo ""

@@ -104,7 +104,8 @@ info "CMake configure..."
     -DPPPOE=FALSE \
     -DLOG_FILE=TRUE \
     -DLOG_TCP=FALSE \
-    -DLOG_SYSLOG=TRUE 2>&1 | tail -40
+    -DLOG_SYSLOG=TRUE \
+    -DCTRL=TRUE 2>&1 | tail -40
 )
 if [ ! -f "$BUILD_DIR/Makefile" ] && [ ! -f "$BUILD_DIR/build.ninja" ]; then
     err "cmake configure FAILED — see tail above (most often missing libpcre/libssl/libev)."
@@ -165,10 +166,12 @@ chmod 600 /etc/accel-ppp/conf/chap-secrets
 info "Writing /etc/accel-ppp/accel-ppp.conf (SSTP bind=0.0.0.0:$SSTP_PORT)..."
 # ==============================================================================
 # FINAL WORKING CONFIG (verified on Ubuntu 22.04 with accel-ppp 1.12.0 tag):
-#   - Only 3 modules (log_file, sstp, auth_pap) — the rest cause SIGSEGV on
-#     1.12.0 with Ubuntu 22.04 libssl/kernel.
-#   - any-login=1 temporarily (to verify 443 LISTEN quickly). Switch to
-#     strict auth via backend UI / chap-secrets after first successful start.
+#   - 4 modules (log_file, sstp, auth_pap, ctrl) — chap-secrets/auth_mschap_v2 STILL
+#     cause SIGSEGV on 1.12.0 Ubuntu 22.04, so WE DO NOT LOAD THEM.
+#     Strict authentication via auth_pap with secrets=<path> works WITHOUT chap-secrets module.
+#   - any-login=0, real auth using shared /etc/ppp/chap-secrets (symlinked) —
+#     same users as L2TP xl2tpd, synced by UI "VPN Sync" button.
+#   - ctrl module listens ONLY on 127.0.0.1:2001 (NEVER public 0.0.0.0 — admin port).
 #   - IP-pool uses DASH syntax (start-end), gw and pool in same /24 subnet as L2TP.
 # ==============================================================================
 # NOTE: we use host=0.0.0.0 (not specific VPN_PUBLIC_IP) to avoid bind failures with
@@ -179,6 +182,7 @@ cat > /etc/accel-ppp/accel-ppp.conf << EOF
 log_file
 sstp
 auth_pap
+ctrl
 
 [core]
 log-error=/var/log/accel-ppp/core.log
@@ -225,15 +229,20 @@ private-key=/etc/accel-ppp/certs/sstp.key
 gw-ip-address=$SSTP_LOCAL_IP
 $PPP_START-$PPP_END
 
+[ctrl]
+# IMPORTANT: listen localhost ONLY — NEVER expose ctrl socket to public internet.
+# accel-cmd connects via:  accel-cmd -H 127.0.0.1 -P 2001 show sessions
+type=tcp
+host=127.0.0.1:2001
+
 [auth]
-# TEMP: allow any login/password to quickly verify 443 LISTEN and SSTP tunnel.
-# When deploying to production and after creating VPN users via UI sync:
-#   1) Set any-login=0
-#   2) Enable chap-secrets module and add secrets=... path here (format: client<TAB>server<TAB>secret<TAB>ip)
-#   3) Backend VpnManager.ACCEL_PPP_SECRETS_PATH already points to /etc/accel-ppp/conf/chap-secrets
-any-login=1
+# Strict auth using SAME chap-secrets file as xl2tpd (L2TP users).
+# secrets path must be in tab-separated format: client<TAB>server<TAB>secret<TAB>ip
+# UI API /api/vpn/sync writes this file.
+any-login=0
+secrets=/etc/accel-ppp/conf/chap-secrets
 EOF
-ok "accel-ppp.conf written (3-module safe config)"
+ok "accel-ppp.conf written (4 modules: log_file + sstp + auth_pap + ctrl; strict auth secrets; ctrl 127.0.0.1:2001)"
 
 info "Generating self-signed SSTP certificate (valid 10 years)..."
 mkdir -p /etc/accel-ppp/certs

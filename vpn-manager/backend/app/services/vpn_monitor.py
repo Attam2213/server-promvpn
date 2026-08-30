@@ -555,9 +555,9 @@ class VpnMonitor:
         sessions = []
         cmd = None
         if shutil.which("accel-cmd"):
-            cmd = ["accel-cmd", "show sessions"]
+            cmd = ["accel-cmd", "-H", "127.0.0.1", "-P", "2001", "show", "sessions"]
         elif os.path.exists("/usr/sbin/accel-cmd"):
-            cmd = ["/usr/sbin/accel-cmd", "show sessions"]
+            cmd = ["/usr/sbin/accel-cmd", "-H", "127.0.0.1", "-P", "2001", "show", "sessions"]
         if not cmd:
             return sessions
         try:
