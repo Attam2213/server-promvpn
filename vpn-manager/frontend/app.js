@@ -14,6 +14,9 @@ const _ST = (label, val) => {
   console.log(`[TRACE] ${label}`, val !== undefined ? val : "ok");
 };
 
+const LEGACY_L2TP_IPS = new Set(["185.253.182.24", "111.111.111.11"]);
+const LEGACY_SSTP_TAGS = [":943", "185.253.182.24:", "111.111.111.111:"];
+
 const state = {
   schema: null,
   defaults: {},
@@ -1320,9 +1323,6 @@ async function initConfigPage() {
       nextValues.dnsServer = nextAuto;
     }
   }
-
-  const LEGACY_L2TP_IPS = new Set(["185.253.182.24", "111.111.111.11"]);
-  const LEGACY_SSTP_TAGS = [":943", "185.253.182.24:", "111.111.111.111:"];
 
   function mergeSchemaDefaults(values, schemaFields) {
     const merged = { ...(values || {}) };
