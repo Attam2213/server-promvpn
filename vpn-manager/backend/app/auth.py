@@ -14,22 +14,36 @@ from .models import User
 from .schemas import TokenData
 
 def _build_crypt_context():
-    schemes = []
+    candidates = []
     preferred = os.environ.get("PASSLIB_SCHEME", "").strip().lower()
-    if preferred == "bcrypt":
-        schemes.append("bcrypt")
-    elif preferred == "sha256_crypt":
-        schemes.append("sha256_crypt")
-    elif preferred:
-        schemes.append(preferred)
-    schemes.extend(["bcrypt", "sha256_crypt"])
+    if preferred:
+        candidates.append(preferred)
+    candidates.extend(["bcrypt", "sha256_crypt"])
+
+    working_schemes = []
+    for scheme in candidates:
+        if scheme in working_schemes:
+            continue
+        try:
+            probe = CryptContext(schemes=[scheme], deprecated="auto")
+            h = probe.hash("probe_pass")
+            if probe.verify("probe_pass", h):
+                working_schemes.append(scheme)
+                print(f"[+] passlib scheme OK: {scheme}")
+        except Exception as e:
+            print(f"[!] passlib scheme SKIPPED {scheme}: {e}")
+
+    if not working_schemes:
+        print(f"[!] All schemes failed, force fallback to sha256_crypt without optional backends")
+        working_schemes = ["sha256_crypt"]
+
     try:
-        ctx = CryptContext(schemes=schemes, deprecated="auto")
-        test_hash = ctx.hash("test")
-        if ctx.verify("test", test_hash):
+        ctx = CryptContext(schemes=working_schemes, deprecated="auto")
+        test_hash = ctx.hash("selftest")
+        if ctx.verify("selftest", test_hash):
             return ctx
     except Exception as e:
-        print(f"[!] CryptContext with {schemes} failed: {e}")
+        print(f"[!] CryptContext combined failed: {e}")
     return CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 
 pwd_context = _build_crypt_context()
