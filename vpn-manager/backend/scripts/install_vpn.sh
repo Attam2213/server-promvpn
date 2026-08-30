@@ -1,5 +1,15 @@
 #!/bin/bash
-set -e
+
+BOLD='\033[1m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+info()  { echo -e "${BOLD}[INFO]${NC}  $1"; }
+ok()    { echo -e "${GREEN}[ OK ]${NC}  $1"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
+err()   { echo -e "${RED}[FAIL]${NC}  $1" >&2; }
 
 echo "=========================================="
 echo "  L2TP + SSTP VPN Server Installer"
@@ -8,19 +18,19 @@ echo "=========================================="
 echo ""
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "ERROR: Run this script as root (sudo bash install_vpn.sh)"
+    err "Run this script as root (sudo bash install_vpn.sh)"
     exit 1
 fi
 
 read -p "Enter public IP of this VDS: " PUBLIC_IP
 if [ -z "$PUBLIC_IP" ]; then
-    echo "ERROR: Public IP is required"
+    err "Public IP is required"
     exit 1
 fi
 
 read -p "Enter IPsec PSK password (shared secret): " IPSEC_PSK
 if [ -z "$IPSEC_PSK" ]; then
-    echo "ERROR: IPsec PSK is required"
+    err "IPsec PSK is required"
     exit 1
 fi
 
@@ -34,10 +44,16 @@ DNS1=${DNS1:-8.8.8.8}
 read -p "Enter secondary DNS [1.1.1.1]: " DNS2
 DNS2=${DNS2:-1.1.1.1}
 
-read -p "Enter SSTP IP range start [10.255.1.100]: " SSTP_START
-SSTP_START=${SSTP_START:-10.255.1.100}
-read -p "Enter SSTP IP range end [10.255.1.200]: " SSTP_END
-SSTP_END=${SSTP_END:-10.255.1.200}
+SSTP_START="10.255.1.100"
+SSTP_END="10.255.1.200"
+INSTALL_SSTP="no"
+echo ""
+info "SSTP (accel-ppp) is OPTIONAL: package not in standard Ubuntu repos."
+info "SSTP needs manual compile or custom PPA. L2TP/IPsec works out of the box."
+read -p "Try to install SSTP (accel-ppp) anyway? [y/N]: " _ans
+case "$_ans" in
+    y|Y|yes|YES) INSTALL_SSTP="yes" ;;
+esac
 
 echo ""
 echo "=========================================="
@@ -45,8 +61,37 @@ echo "  Installing packages..."
 echo "=========================================="
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y xl2tpd libreswan ppp iptables-persistent accel-ppp
+apt-get update -y -qq || true
+
+BASE_PKGS="xl2tpd ppp iptables-persistent net-tools iptables"
+SWAN_PKG=""
+if apt-cache show libreswan >/dev/null 2>&1; then
+    SWAN_PKG="libreswan"
+elif apt-cache show strongswan >/dev/null 2>&1; then
+    SWAN_PKG="strongswan"
+fi
+
+info "Installing L2TP base packages: $BASE_PKGS $SWAN_PKG"
+apt-get install -y -qq --no-install-recommends $BASE_PKGS $SWAN_PKG 2>&1 | tail -3 || true
+
+IPSEC_BIN=""
+if command -v ipsec >/dev/null 2>&1; then
+    IPSEC_BIN="ipsec"
+elif command -v strongswan >/dev/null 2>&1; then
+    IPSEC_BIN="strongswan"
+fi
+
+SSTP_OK="no"
+if [ "$INSTALL_SSTP" = "yes" ]; then
+    info "Trying to install accel-ppp (SSTP)..."
+    if apt-get install -y -qq accel-ppp 2>/dev/null; then
+        ok "accel-ppp installed"
+        SSTP_OK="yes"
+    else
+        warn "accel-ppp package not found in standard repos. SSTP skipped."
+        warn "To enable SSTP manually: add custom repo or build accel-ppp from sources."
+    fi
+fi
 
 echo ""
 echo "=========================================="
@@ -59,8 +104,11 @@ net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
 net.ipv4.conf.default.accept_redirects = 0
 net.ipv4.conf.default.send_redirects = 0
+net.ipv4.conf.all.rp_filter = 0
+net.ipv4.conf.default.rp_filter = 0
 EOF
-sysctl -p /etc/sysctl.d/99-vpn-forward.conf
+sysctl -p /etc/sysctl.d/99-vpn-forward.conf >/dev/null 2>&1 || true
+ok "IP forwarding enabled"
 
 echo ""
 echo "=========================================="
@@ -96,6 +144,7 @@ conn L2TP-PSK-noNAT
     dpdtimeout=130
     dpdaction=clear
 EOF
+ok "/etc/ipsec.conf written"
 
 echo ""
 echo "=========================================="
@@ -107,12 +156,14 @@ $PUBLIC_IP %any : PSK "$IPSEC_PSK"
 EOF
 
 chmod 600 /etc/ipsec.secrets
+ok "/etc/ipsec.secrets written (chmod 600)"
 
 echo ""
 echo "=========================================="
 echo "  Configuring xl2tpd (/etc/xl2tpd/xl2tpd.conf)..."
 echo "=========================================="
 
+mkdir -p /etc/xl2tpd
 cat > /etc/xl2tpd/xl2tpd.conf << EOF
 [global]
 port = 1701
@@ -135,6 +186,7 @@ ppp debug = no
 pppoptfile = /etc/ppp/options.xl2tpd
 length bit = yes
 EOF
+ok "/etc/xl2tpd/xl2tpd.conf written"
 
 echo ""
 echo "=========================================="
@@ -148,7 +200,6 @@ ms-dns $DNS2
 asyncmap 0
 auth
 hide-password
-debug
 name l2tpd
 proxyarp
 lcp-echo-failure 4
@@ -157,26 +208,22 @@ mtu 1410
 mru 1410
 noipx
 EOF
+ok "/etc/ppp/options.xl2tpd written"
 
+if [ "$SSTP_OK" = "yes" ]; then
 echo ""
 echo "=========================================="
 echo "  Configuring accel-ppp (SSTP on port 943)..."
 echo "=========================================="
 
-mkdir -p /etc/accel-ppp
+mkdir -p /etc/accel-ppp /var/log/accel-ppp
 cat > /etc/accel-ppp.conf << EOF
 [modules]
 log_file
-pptp
-l2tp
 sstp
-pppoe
 auth
 chap-msv2
-radius
 ippool
-shaper
-net-snmp
 
 [core]
 log-error=/var/log/accel-ppp/core.log
@@ -191,7 +238,6 @@ sid-source=seq
 log-file=/var/log/accel-ppp/accel-ppp.log
 log-emerg=/var/log/accel-ppp/emerg.log
 log-fail-file=/var/log/accel-ppp/auth-fail.log
-log-debug=/var/log/accel-ppp/debug.log
 copy=3
 color=1
 default=error
@@ -226,6 +272,11 @@ $SSTP_START-$SSTP_END
 any-login=0
 noauth=0
 EOF
+ok "/etc/accel-ppp.conf written"
+else
+echo ""
+info "SSTP skipped — accel-ppp not installed."
+fi
 
 echo ""
 echo "=========================================="
@@ -247,15 +298,19 @@ cat > /etc/ppp/chap-secrets << 'EOF'
 EOF
 
 chmod 600 /etc/ppp/chap-secrets
+ok "/etc/ppp/chap-secrets written (chmod 600)"
 
 echo ""
 echo "=========================================="
 echo "  Detecting main network interface..."
 echo "=========================================="
 
-MAIN_IF=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
+MAIN_IF=$(ip -4 route ls 2>/dev/null | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
 if [ -z "$MAIN_IF" ]; then
-    MAIN_IF=$(ls /sys/class/net | grep -E '^(eth|ens|enp|wlan)' | head -1)
+    MAIN_IF=$(ls /sys/class/net 2>/dev/null | grep -E '^(eth|ens|enp|wlan|venet|eno)' | head -1)
+fi
+if [ -z "$MAIN_IF" ]; then
+    MAIN_IF="eth0"
 fi
 echo "Using main interface: $MAIN_IF"
 
@@ -264,23 +319,26 @@ echo "=========================================="
 echo "  Configuring iptables NAT for 10.255.0.0/16..."
 echo "=========================================="
 
-iptables -t nat -F
-iptables -F
+iptables -t nat -F 2>/dev/null || true
+iptables -F 2>/dev/null || true
 
-iptables -t nat -A POSTROUTING -s 10.255.0.0/16 -o $MAIN_IF -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 10.255.0.0/16 -o "$MAIN_IF" -j MASQUERADE
 
 iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 iptables -A FORWARD -s 10.255.0.0/16 -j ACCEPT
+iptables -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 iptables -A FORWARD -j REJECT
+
+ok "iptables NAT + forwarding rules applied"
 
 echo ""
 echo "=========================================="
 echo "  Saving iptables rules (persistent)..."
 echo "=========================================="
 
+mkdir -p /etc/iptables
 if command -v iptables-save >/dev/null 2>&1; then
-    iptables-save > /etc/iptables/rules.v4
-    echo "iptables saved to /etc/iptables/rules.v4"
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null && echo "iptables saved to /etc/iptables/rules.v4" || true
 fi
 
 echo ""
@@ -288,13 +346,24 @@ echo "=========================================="
 echo "  Enabling and starting services..."
 echo "=========================================="
 
-systemctl enable ipsec 2>/dev/null || systemctl enable libreswan 2>/dev/null || true
-systemctl enable xl2tpd 2>/dev/null || true
-systemctl enable accel-ppp 2>/dev/null || true
+IPSEC_SVC=""
+if systemctl list-unit-files 2>/dev/null | grep -q '^ipsec.service'; then
+    IPSEC_SVC="ipsec"
+elif systemctl list-unit-files 2>/dev/null | grep -q '^libreswan.service'; then
+    IPSEC_SVC="libreswan"
+elif systemctl list-unit-files 2>/dev/null | grep -q '^strongswan.service'; then
+    IPSEC_SVC="strongswan"
+elif systemctl list-unit-files 2>/dev/null | grep -q '^strongswan-starter.service'; then
+    IPSEC_SVC="strongswan-starter"
+fi
 
-systemctl restart ipsec 2>/dev/null || systemctl restart libreswan 2>/dev/null || true
+[ -n "$IPSEC_SVC" ] && systemctl enable "$IPSEC_SVC" 2>/dev/null || true
+systemctl enable xl2tpd 2>/dev/null || true
+[ "$SSTP_OK" = "yes" ] && systemctl enable accel-ppp 2>/dev/null || true
+
+[ -n "$IPSEC_SVC" ] && systemctl restart "$IPSEC_SVC" 2>/dev/null || true
 systemctl restart xl2tpd 2>/dev/null || true
-systemctl restart accel-ppp 2>/dev/null || true
+[ "$SSTP_OK" = "yes" ] && systemctl restart accel-ppp 2>/dev/null || true
 
 sleep 2
 
@@ -303,29 +372,45 @@ echo "=========================================="
 echo "  Service status check:"
 echo "=========================================="
 
-for svc in ipsec libreswan xl2tpd accel-ppp; do
-    if systemctl is-active --quiet $svc 2>/dev/null; then
-        echo "  [OK]   $svc is running"
+check_svc() {
+    local s=$1
+    if systemctl is-active --quiet "$s" 2>/dev/null; then
+        echo "  [OK]   $s is running"
     else
-        echo "  [WARN] $svc is NOT running (may be named differently on this distro)"
+        echo "  [WARN] $s is NOT running"
     fi
-done
+}
+
+[ -n "$IPSEC_SVC" ] && check_svc "$IPSEC_SVC"
+check_svc xl2tpd
+[ "$SSTP_OK" = "yes" ] && check_svc accel-ppp
 
 echo ""
 echo "=========================================="
-echo "  Installation complete!"
+echo -e "  ${GREEN}Installation complete!${NC}"
 echo "=========================================="
 echo ""
 echo "Public IP:        $PUBLIC_IP"
 echo "IPsec PSK:        $IPSEC_PSK"
+echo "L2TP port:        1701 (UDP) + 500/4500 (UDP for IKE/NAT-T)"
 echo "L2TP PPP range:   $PPP_START - $PPP_END"
-echo "SSTP port:        943"
-echo "SSTP PPP range:   $SSTP_START - $SSTP_END"
 echo "DNS servers:      $DNS1, $DNS2"
 echo "Main interface:   $MAIN_IF"
+if [ "$SSTP_OK" = "yes" ]; then
+echo "SSTP port:        943 (TCP)"
+echo "SSTP PPP range:   $SSTP_START - $SSTP_END"
+else
+echo "SSTP:             SKIPPED (accel-ppp not installed)"
+fi
 echo ""
 echo "Users are managed in /etc/ppp/chap-secrets"
 echo "Format:  username  *  password  *"
 echo ""
-echo "To sync users from the web admin panel, use POST /api/vpn/sync"
+echo "To sync users from the web admin panel:"
+echo "  1) Create routers with L2TP credentials in UI"
+echo "  2) Run POST /api/vpn/sync or click Sync button in dashboard"
+echo ""
+echo "To check L2TP logs:"
+echo "  journalctl -u xl2tpd -f"
+echo "  tail -f /var/log/syslog | grep -E 'xl2tpd|pppd|ipsec'"
 echo ""

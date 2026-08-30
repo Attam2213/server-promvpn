@@ -3,8 +3,13 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+
+try:
+    from fastapi.staticfiles import StaticFiles
+    _STATIC_AVAILABLE = True
+except Exception:
+    _STATIC_AVAILABLE = False
 
 from .database import Base, engine, SessionLocal
 from .auth import get_password_hash
@@ -32,6 +37,8 @@ def _create_default_admin():
             db.add(admin)
             db.commit()
             print("[+] Default admin created: admin / admin")
+    except Exception as e:
+        print(f"[!] Warning: failed to create default admin: {e}")
     finally:
         db.close()
 
@@ -40,7 +47,7 @@ _create_default_admin()
 app = FastAPI(
     title="VPN VDS Manager API",
     description="Менеджер VPN и конфигураций MikroTik (L2TP + SSTP)",
-    version="1.0.0",
+    version="1.0.1",
 )
 
 app.add_middleware(
@@ -58,20 +65,49 @@ app.include_router(monitoring_router)
 app.include_router(configs_router)
 app.include_router(vpn_router, prefix="/api/vpn", tags=["VPN Management"])
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
+def _resolve_frontend_dir() -> Path:
+    candidates = []
+    env_frontend = os.environ.get("FRONTEND_DIR", "").strip()
+    if env_frontend:
+        candidates.append(Path(env_frontend))
+    this_file = Path(__file__).resolve()
+    candidates.append(this_file.parent.parent.parent / "frontend")
+    candidates.append(this_file.parent.parent / "frontend")
+    candidates.append(Path.cwd().resolve() / "frontend")
+    candidates.append(Path("/opt/server-promvpn/vpn-manager/frontend"))
+    candidates.append(Path("/opt/vpn-manager/frontend"))
+    for p in candidates:
+        try:
+            if p and p.exists() and p.is_dir() and (p / "login.html").exists():
+                return p
+        except Exception:
+            continue
+    return None
+
+FRONTEND_DIR = _resolve_frontend_dir()
+if FRONTEND_DIR:
+    print(f"[+] Frontend dir resolved: {FRONTEND_DIR}")
+else:
+    print("[!] Frontend dir not found — SPA routing disabled, API-only mode.")
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "service": "vpn-vds-manager"}
+    info = {
+        "status": "ok",
+        "service": "vpn-vds-manager",
+        "frontend_dir": str(FRONTEND_DIR) if FRONTEND_DIR else None,
+    }
+    return info
 
 
 @app.get("/api/info")
 async def api_info():
     return {
         "name": "VPN VDS Manager API",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "default_login": "admin / admin (CHANGE THIS!)",
         "docs": "/docs",
+        "frontend_dir": str(FRONTEND_DIR) if FRONTEND_DIR else None,
         "endpoints": {
             "auth": [
                 "POST /api/auth/login (OAuth2 form)",
@@ -111,8 +147,11 @@ async def api_info():
     }
 
 
-if FRONTEND_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+if FRONTEND_DIR and _STATIC_AVAILABLE:
+    try:
+        app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+    except Exception as e:
+        print(f"[!] Failed to mount static frontend dir: {e}")
 
     @app.get("/", include_in_schema=False)
     async def serve_root():
@@ -132,9 +171,17 @@ if FRONTEND_DIR.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
-        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi") or full_path.startswith("redoc"):
-            return
+        reserved = ("api/", "docs", "openapi.json", "redoc")
+        for r in reserved:
+            if full_path == r or full_path.startswith(r):
+                return JSONResponse(status_code=404, content={"detail": "not found"})
         requested = FRONTEND_DIR / full_path
-        if requested.exists() and requested.is_file():
-            return FileResponse(str(requested))
-        return FileResponse(str(FRONTEND_DIR / "login.html"))
+        try:
+            if requested.exists() and requested.is_file():
+                return FileResponse(str(requested))
+        except Exception:
+            pass
+        fallback = FRONTEND_DIR / "login.html"
+        if fallback.exists():
+            return FileResponse(str(fallback))
+        return JSONResponse(status_code=404, content={"detail": "frontend file not found"})

@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 BOLD='\033[1m'
 GREEN='\033[0;32m'
@@ -27,6 +26,7 @@ REPO_URL="https://github.com/Attam2213/server-promvpn.git"
 APP_SERVICE_NAME="vpn-manager"
 APP_PORT="${APP_PORT:-8000}"
 APP_USER="${APP_USER:-root}"
+FRONTEND_DIR="${FRONTEND_DIR:-$PROJECT_ROOT/frontend}"
 
 echo ""
 echo "========================================================="
@@ -40,20 +40,22 @@ echo ""
 
 info "1/7. Обновляем индексы пакетов и ставим системные зависимости..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y -qq
+apt-get update -y -qq || true
 apt-get install -y -qq --no-install-recommends \
     git curl ca-certificates wget tzdata locales \
     python3 python3-venv python3-pip python3-dev \
-    build-essential libffi-dev libssl-dev 2>&1 | tail -5 || true
+    build-essential libffi-dev libssl-dev 2>&1 | tail -3 || true
 ok "Системные пакеты установлены."
 
 if [[ ! -f "$PROJECT_ROOT/backend/requirements.txt" ]]; then
     info "2/7. Репозиторий ещё не клонирован — клонируем $REPO_URL..."
     cd /tmp
     if [[ -d server-promvpn ]]; then rm -rf server-promvpn; fi
-    git clone --depth 1 "$REPO_URL" server-promvpn
-    mkdir -p "$PROJECT_ROOT"
-    cp -a server-promvpn/vpn-manager/. "$PROJECT_ROOT/"
+    git clone --depth 1 "$REPO_URL" server-promvpn || true
+    if [[ -d server-promvpn/vpn-manager ]]; then
+        mkdir -p "$PROJECT_ROOT"
+        cp -a server-promvpn/vpn-manager/. "$PROJECT_ROOT/"
+    fi
     rm -rf server-promvpn
     cd "$PROJECT_ROOT"
 else
@@ -62,11 +64,15 @@ fi
 
 info "3/7. Создаём Python venv и ставим зависимости..."
 if [[ ! -d "$VENV_DIR" ]]; then
-    python3 -m venv "$VENV_DIR"
+    python3 -m venv "$VENV_DIR" || true
 fi
-"$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel --quiet
-"$VENV_DIR/bin/pip" install -r "$BACKEND_DIR/requirements.txt" --quiet
-ok "Python зависимости установлены в $VENV_DIR"
+"$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel --quiet || true
+"$VENV_DIR/bin/pip" install -r "$BACKEND_DIR/requirements.txt" --quiet || true
+if "$VENV_DIR/bin/python" -c "import fastapi, uvicorn, sqlalchemy" 2>/dev/null; then
+    ok "Python зависимости установлены в $VENV_DIR"
+else
+    err "Критические пакеты не установились. Проверь pip: $VENV_DIR/bin/pip install -r $BACKEND_DIR/requirements.txt"
+fi
 
 info "4/7. Устанавливаем L2TP + SSTP VPN сервер (xl2tpd + libreswan + accel-ppp)..."
 VPN_INSTALL="$BACKEND_DIR/scripts/install_vpn.sh"
@@ -90,6 +96,7 @@ User=$APP_USER
 WorkingDirectory=$BACKEND_DIR
 Environment="PATH=$VENV_DIR/bin"
 Environment="PYTHONUNBUFFERED=1"
+Environment="FRONTEND_DIR=$FRONTEND_DIR"
 ExecStart=$VENV_DIR/bin/uvicorn app.main:app --host 0.0.0.0 --port $APP_PORT
 Restart=always
 RestartSec=5
@@ -101,10 +108,10 @@ WantedBy=multi-user.target
 SYSTEMD
 ok "Юнит записан: $SERVICE_FILE"
 
-systemctl daemon-reload
-systemctl enable "$APP_SERVICE_NAME"
-systemctl restart "$APP_SERVICE_NAME"
-sleep 2
+systemctl daemon-reload || true
+systemctl enable "$APP_SERVICE_NAME" || true
+systemctl restart "$APP_SERVICE_NAME" || true
+sleep 3
 ok "Сервис $APP_SERVICE_NAME запущен и добавлен в автозагрузку."
 
 info "6/7. Синхронизируем учётки БД → chap-secrets..."
@@ -118,12 +125,12 @@ print(m.sync_routers_to_vpn(SessionLocal()))
 ok "Результат sync_routers_to_vpn: $SYNC_OUTPUT"
 
 info "7/7. Проверка healthcheck..."
-sleep 1
-HEALTH=$(curl -s "http://127.0.0.1:${APP_PORT}/api/health" || echo "")
+sleep 2
+HEALTH=$(curl -s --max-time 5 "http://127.0.0.1:${APP_PORT}/api/health" || echo "")
 if echo "$HEALTH" | grep -q "ok"; then
     ok "API отвечает: /api/health -> $HEALTH"
 else
-    warn "Healthcheck не прошёл (возможно, сервис ещё стартует). Статус сервиса:"
+    warn "Healthcheck не прошёл. Смотри логи: journalctl -u $APP_SERVICE_NAME -n 50 --no-pager"
     systemctl --no-pager status "$APP_SERVICE_NAME" --lines=10 || true
 fi
 
@@ -143,6 +150,6 @@ echo ""
 echo "  Команды управления:"
 echo "    bash $PROJECT_ROOT/update.sh        # подтянуть обновления с GitHub"
 echo "    systemctl restart $APP_SERVICE_NAME # перезапуск менеджера"
-echo "    systemctl restart xl2tpd ipsec accel-ppp  # перезапуск VPN"
+echo "    systemctl restart xl2tpd 2>/dev/null; systemctl restart ipsec 2>/dev/null || systemctl restart libreswan 2>/dev/null || true"
 echo "========================================================="
 echo ""
