@@ -228,7 +228,7 @@
       "section": "L2TP",
       "type": "password",
       "required": true,
-      "default": "Greml1N2810!",
+      "default": "Hager2213@",
       "placeholder": "Пароль L2TP",
       "help": "Пароль для L2TP туннеля."
     },
@@ -267,7 +267,7 @@
       "section": "SSTP",
       "type": "password",
       "required": true,
-      "default": "Greml1N2810!",
+      "default": "Hager2213@",
       "placeholder": "Пароль SSTP",
       "help": "Пароль для SSTP туннеля."
     },
