@@ -11,6 +11,30 @@ const state = {
   refreshInterval: null,
 };
 
+let logoutBtn;
+let configTabNode;
+let settingsTabNode;
+let configTabButton;
+let settingsTabButton;
+let statusNode;
+let formNode;
+let previewNode;
+let formTitleNode;
+let profileSelectNode;
+let routerListNode;
+let resetButton;
+let downloadButton;
+let downloadPreviewButton;
+let downloadAllButton;
+let addRouterButton;
+let duplicateRouterButton;
+let removeRouterButton;
+let newProfileButton;
+let saveProfileButton;
+let deleteProfileButton;
+let fieldTemplate;
+let routerItemTemplate;
+
 const SECTION_ORDER = ["Идентификация", "Wi-Fi", "WAN", "L2TP", "SSTP", "LAN", "Маршруты"];
 
 function getToken() {
@@ -842,7 +866,7 @@ document.addEventListener("submit", async (e) => {
 });
 
 async function initConfigPage() {
-  const logoutBtn = document.querySelector("#logout-btn");
+  logoutBtn = document.querySelector("#logout-btn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", () => {
       if (state.refreshInterval) clearInterval(state.refreshInterval);
@@ -850,28 +874,28 @@ async function initConfigPage() {
     });
   }
 
-  const configTabNode = document.querySelector("#config-tab");
-  const settingsTabNode = document.querySelector("#settings-tab");
-  const configTabButton = document.querySelector("#tab-config-btn");
-  const settingsTabButton = document.querySelector("#tab-settings-btn");
-  const statusNode = document.querySelector("#status");
-  const formNode = document.querySelector("#config-form");
-  const previewNode = document.querySelector("#preview");
-  const formTitleNode = document.querySelector("#form-title");
-  const profileSelectNode = document.querySelector("#profile-select");
-  const routerListNode = document.querySelector("#router-list");
-  const resetButton = document.querySelector("#reset-btn");
-  const downloadButton = document.querySelector("#download-btn");
-  const downloadPreviewButton = document.querySelector("#download-preview-btn");
-  const downloadAllButton = document.querySelector("#download-all-btn");
-  const addRouterButton = document.querySelector("#add-router-btn");
-  const duplicateRouterButton = document.querySelector("#duplicate-router-btn");
-  const removeRouterButton = document.querySelector("#remove-router-btn");
-  const newProfileButton = document.querySelector("#new-profile-btn");
-  const saveProfileButton = document.querySelector("#save-profile-btn");
-  const deleteProfileButton = document.querySelector("#delete-profile-btn");
-  const fieldTemplate = document.querySelector("#field-template");
-  const routerItemTemplate = document.querySelector("#router-item-template");
+  configTabNode = document.querySelector("#config-tab");
+  settingsTabNode = document.querySelector("#settings-tab");
+  configTabButton = document.querySelector("#tab-config-btn");
+  settingsTabButton = document.querySelector("#tab-settings-btn");
+  statusNode = document.querySelector("#status");
+  formNode = document.querySelector("#config-form");
+  previewNode = document.querySelector("#preview");
+  formTitleNode = document.querySelector("#form-title");
+  profileSelectNode = document.querySelector("#profile-select");
+  routerListNode = document.querySelector("#router-list");
+  resetButton = document.querySelector("#reset-btn");
+  downloadButton = document.querySelector("#download-btn");
+  downloadPreviewButton = document.querySelector("#download-preview-btn");
+  downloadAllButton = document.querySelector("#download-all-btn");
+  addRouterButton = document.querySelector("#add-router-btn");
+  duplicateRouterButton = document.querySelector("#duplicate-router-btn");
+  removeRouterButton = document.querySelector("#remove-router-btn");
+  newProfileButton = document.querySelector("#new-profile-btn");
+  saveProfileButton = document.querySelector("#save-profile-btn");
+  deleteProfileButton = document.querySelector("#delete-profile-btn");
+  fieldTemplate = document.querySelector("#field-template");
+  routerItemTemplate = document.querySelector("#router-item-template");
 
   setStatus("Загрузка схемы и профилей...", "loading");
 
@@ -1692,4 +1716,19 @@ async function initConfigPage() {
       });
     }
   }
-}
+
+  function autoInitPage() {
+    if (document.getElementById("config-form")) {
+      initConfigPage();
+      return;
+    }
+    if (document.getElementById("refresh-btn")) {
+      initDashboardPage();
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", autoInitPage);
+  } else {
+    autoInitPage();
+  }
