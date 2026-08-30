@@ -226,15 +226,31 @@ function initLoginPage() {
 async function initDashboardPage() {
   const logoutBtn = document.querySelector("#logout-btn");
   const refreshBtn = document.querySelector("#refresh-btn");
+  const refreshSessionsBtn = document.querySelector("#refresh-sessions-btn");
+  const refreshUsersBtn = document.querySelector("#refresh-users-btn");
   const vpnSyncBtn = document.querySelector("#vpn-sync-btn");
   const vpnRestartBtn = document.querySelector("#vpn-restart-btn");
+  const usersSyncBtn = document.querySelector("#users-sync-btn");
+  const addUserBtn = document.querySelector("#add-user-btn");
   const settingsBtn = document.querySelector("#tab-settings-btn");
+  const generatePwBtn = document.querySelector("#generate-pw-btn");
+
+  // Tab switching
+  state.activeTab = "dashboard";
+  document.querySelectorAll("[data-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.getAttribute("data-tab");
+      switchDashboardTab(tab);
+    });
+  });
 
   logoutBtn.addEventListener("click", () => {
     redirectToLogin();
   });
 
   refreshBtn.addEventListener("click", loadDashboardData);
+  if (refreshSessionsBtn) refreshSessionsBtn.addEventListener("click", loadDashboardData);
+  if (refreshUsersBtn) refreshUsersBtn.addEventListener("click", loadDashboardData);
 
   if (vpnSyncBtn) {
     vpnSyncBtn.addEventListener("click", async () => {
@@ -248,18 +264,41 @@ async function initDashboardPage() {
           `➖ Удалено: ${result.removed}\n` +
           `⏭ Пропущено (уже существуют): ${result.skipped}\n`,
         );
+        await loadDashboardData();
       } catch (error) {
         alert(`❌ Ошибка VPN Sync: ${error.message}`);
       } finally {
         vpnSyncBtn.disabled = false;
-        vpnSyncBtn.textContent = "🔄 VPN Sync (роутеры → chap-secrets)";
+        vpnSyncBtn.textContent = "📤 VPN Sync (роутеры → chap-secrets)";
+      }
+    });
+  }
+
+  if (usersSyncBtn) {
+    usersSyncBtn.addEventListener("click", async () => {
+      usersSyncBtn.disabled = true;
+      usersSyncBtn.textContent = "⏳ Синхронизация...";
+      try {
+        const result = await apiFetch("/api/vpn/sync", { method: "POST" });
+        alert(
+          `✅ VPN Sync выполнен!\n\n` +
+          `➕ Добавлено: ${result.added}\n` +
+          `➖ Удалено: ${result.removed}\n` +
+          `⏭ Пропущено: ${result.skipped}\n`,
+        );
+        await loadDashboardData();
+      } catch (error) {
+        alert(`❌ Ошибка VPN Sync: ${error.message}`);
+      } finally {
+        usersSyncBtn.disabled = false;
+        usersSyncBtn.textContent = "📤 VPN Sync";
       }
     });
   }
 
   if (vpnRestartBtn) {
     vpnRestartBtn.addEventListener("click", async () => {
-      if (!confirm("Перезапустить службы VPN (xl2tpd/accel-ppp) на сервере?")) return;
+      if (!confirm("Перезапустить службы VPN (xl2tpd/accel-ppp/ipsec) на сервере?")) return;
       vpnRestartBtn.disabled = true;
       vpnRestartBtn.textContent = "⏳ Перезапуск...";
       try {
@@ -278,65 +317,214 @@ async function initDashboardPage() {
     settingsBtn.addEventListener("click", openPasswordModal);
   }
 
+  if (addUserBtn) {
+    addUserBtn.addEventListener("click", () => openVpnUserModal());
+  }
+
+  if (generatePwBtn) {
+    generatePwBtn.addEventListener("click", () => {
+      const input = document.querySelector("#vpn-user-password");
+      if (input) input.value = generatePassword(14);
+    });
+  }
+
+  // VPN user form submit
+  document.addEventListener("submit", async (e) => {
+    const form = e.target;
+    if (!form || form.id !== "vpn-user-form") return;
+    e.preventDefault();
+
+    const original = (form.querySelector("#vpn-user-original")?.value || "").trim();
+    const username = (form.querySelector("#vpn-user-username")?.value || "").trim();
+    const password = (form.querySelector("#vpn-user-password")?.value || "").trim();
+    const ip_address = (form.querySelector("#vpn-user-ip")?.value || "*").trim() || "*";
+    const statusNode = form.querySelector("#vpn-user-status");
+    const submitBtn = form.querySelector("#vpn-user-submit");
+
+    ["vpn-user-username", "vpn-user-password"].forEach((id) => {
+      const err = form.querySelector(`[data-error-for="${id}"]`);
+      if (err) err.textContent = "";
+    });
+
+    let hasError = false;
+    if (!username) {
+      const err = form.querySelector('[data-error-for="vpn-user-username"]');
+      if (err) err.textContent = "Введите логин.";
+      hasError = true;
+    }
+    if (password.length < 2) {
+      const err = form.querySelector('[data-error-for="vpn-user-password"]');
+      if (err) err.textContent = "Минимум 2 символа.";
+      hasError = true;
+    }
+    if (hasError) return;
+
+    if (submitBtn) submitBtn.disabled = true;
+    if (statusNode) {
+      statusNode.style.display = "block";
+      statusNode.className = "status status-loading";
+      statusNode.textContent = "Сохранение...";
+    }
+
+    try {
+      if (original) {
+        await apiFetch(`/api/vpn/users/${encodeURIComponent(original)}`, {
+          method: "PUT",
+          body: JSON.stringify({ username, password, ip_address }),
+        });
+      } else {
+        await apiFetch("/api/vpn/users", {
+          method: "POST",
+          body: JSON.stringify({ username, password, ip_address }),
+        });
+      }
+      if (statusNode) {
+        statusNode.className = "status status-success";
+        statusNode.textContent = "✅ Сохранено";
+      }
+      setTimeout(() => {
+        closeVpnUserModal();
+        loadDashboardData();
+      }, 600);
+    } catch (error) {
+      if (statusNode) {
+        statusNode.className = "status status-error";
+        statusNode.textContent = error.message || "Ошибка";
+      }
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+
+  // Close VPN user modal buttons + Esc
+  document.addEventListener("click", (e) => {
+    const closeAttr = e.target.getAttribute && e.target.getAttribute("data-close-modal");
+    if (closeAttr !== "1") return;
+    closePasswordModal();
+    closeVpnUserModal();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closePasswordModal();
+      closeVpnUserModal();
+    }
+  });
+
   await loadDashboardData();
   state.refreshInterval = setInterval(loadDashboardData, 10000);
 }
 
+function switchDashboardTab(tab) {
+  state.activeTab = tab;
+  document.querySelectorAll("[data-tab]").forEach((btn) => {
+    const isActive = btn.getAttribute("data-tab") === tab;
+    btn.classList.toggle("tab-btn-active", isActive);
+  });
+  document.querySelectorAll(".tab-panel").forEach((panel) => {
+    const id = panel.id;
+    const isActive = id === `tab-${tab}`;
+    panel.classList.toggle("tab-panel-active", isActive);
+  });
+}
+
 async function loadDashboardData() {
   try {
-    const profiles = await apiFetch("/api/profiles");
+    const [profiles, stats, sessionResp, usersResp] = await Promise.all([
+      apiFetch("/api/profiles").catch(() => []),
+      apiFetch("/api/monitoring/stats").catch(() => ({
+        total_routers: 0,
+        total_profiles: 0,
+        online_count: 0,
+        offline_count: 0,
+        total_traffic_gb: 0,
+        total_traffic_mb: 0,
+        total_traffic_human: "0 B",
+        uptime_human: "—",
+        uptime_seconds: 0,
+      })),
+      apiFetch("/api/monitoring/sessions").catch(() => ({ count: 0, sessions: [] })),
+      apiFetch("/api/vpn/users").catch(() => ({ users: [] })),
+    ]);
 
-    let allRouters = [];
-    for (const profile of profiles) {
-      if (Array.isArray(profile.routers)) {
-        for (const router of profile.routers) {
-          allRouters.push({
-            ...router,
-            profileName: profile.name,
-            profileId: profile.id,
-          });
-        }
+    const sessions = (sessionResp?.sessions || []).filter((s) => s?.online);
+    const users = usersResp?.users || [];
+
+    const sessionByUser = new Map();
+    for (const s of sessions) {
+      const uname = String(s.vpn_username || "").trim().toLowerCase();
+      if (uname) {
+        if (!sessionByUser.has(uname)) sessionByUser.set(uname, s);
       }
     }
 
-    const total = allRouters.length;
-    let online = 0;
-    let offline = 0;
-    let totalTraffic = 0;
+    // Build routers list from profiles
+    let allRouters = [];
+    for (const profile of profiles || []) {
+      for (const router of profile.routers || []) {
+        const values = router.values || {};
+        allRouters.push({ ...router, profileName: profile.name, profileId: profile.id, _values: values });
+      }
+    }
 
+    // Build router enriched rows (lookup session via l2tp/sstp/pppoe creds)
     allRouters = allRouters.map((router) => {
-      const values = router.values || {};
-      const isOnline = router.is_online || Math.random() > 0.3;
-      if (isOnline) online++;
-      else offline++;
-
-      const traffic = router.traffic_mb || Math.floor(Math.random() * 5000);
-      totalTraffic += traffic;
-
+      const v = router._values || {};
+      const creds = [v.l2tpUser, v.sstpUser, v.pppoeUsername].map((c) => c && String(c).trim().toLowerCase()).filter(Boolean);
+      let session = null;
+      for (const c of creds) {
+        if (sessionByUser.has(c)) { session = sessionByUser.get(c); break; }
+      }
+      const isOnline = !!session;
+      const lanSubnet = v.lanOctet ? `192.168.${v.lanOctet}.0/24` : "—";
+      const ssid = (v.ssid && v.hasWifi !== false) ? String(v.ssid) : "—";
+      const vpnLogin = v.l2tpUser || v.sstpUser || v.pppoeUsername || "—";
+      const name = router.name || v.routerName || "Без названия";
+      const uptime = isOnline ? (session?.uptime_human || formatUptime(session?.uptime_seconds || 0)) : "—";
+      const trafficMB = isOnline ? (session?.traffic_mb ?? 0) : 0;
       return {
         ...router,
-        _name: router.name || values.routerName || "Без названия",
-        _lanSubnet: values.lanOctet ? `192.168.${values.lanOctet}.0/24` : "—",
-        _ssid: values.ssid || (values.hasWifi === false ? "—" : "—"),
+        _name: name,
+        _vpnLogin: vpnLogin,
+        _lanSubnet: lanSubnet,
+        _ssid: ssid,
         _isOnline: isOnline,
-        _uptime: router.uptime_seconds || formatUptime(Math.floor(Math.random() * 86400 * 7)),
-        _traffic: formatTraffic(traffic),
+        _uptime: uptime,
+        _traffic: isOnline ? (session?.traffic_human || formatTraffic(trafficMB)) : "—",
+        _profileName: router.profileName || "",
+        _router_id: router.id,
       };
     });
 
-    document.querySelector("#stat-total").textContent = total;
-    document.querySelector("#stat-online").textContent = online;
-    document.querySelector("#stat-offline").textContent = offline;
-    document.querySelector("#stat-traffic").textContent = formatTraffic(totalTraffic);
+    const total = allRouters.length;
+    const online = allRouters.filter((r) => r._isOnline).length;
+    const offline = Math.max(0, total - online);
+
+    // Stats cards
+    document.querySelector("#stat-total").textContent = stats?.total_routers != null ? stats.total_routers : total;
+    document.querySelector("#stat-online").textContent = stats?.online_count != null ? stats.online_count : online;
+    document.querySelector("#stat-offline").textContent = stats?.offline_count != null ? stats.offline_count : offline;
+    document.querySelector("#stat-traffic").textContent = stats?.total_traffic_human || `${stats?.total_traffic_gb || 0} GB`;
+    document.querySelector("#stat-profiles").textContent = `Профилей: ${stats?.total_profiles ?? (profiles?.length || 0)}`;
+    document.querySelector("#stat-uptime").textContent = `Uptime сервера: ${stats?.uptime_human || "—"}`;
+    document.querySelector("#stat-traffic-mb").textContent = `≈ ${stats?.total_traffic_mb ?? 0} MB`;
+    document.querySelector("#stat-sessions").textContent = `Активных сессий: ${sessions.length}`;
     document.querySelector("#last-update").textContent = new Date().toLocaleTimeString("ru-RU");
 
+    document.querySelector("#sessions-count").textContent = sessions.length;
+    document.querySelector("#users-count").textContent = users.length;
+
     renderRoutersTable(allRouters);
+    renderSessionsTable(sessions);
+    renderUsersTable(users);
   } catch (error) {
     console.error("Dashboard load error:", error);
-    const tbody = document.querySelector("#routers-tbody");
-    if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="6" class="table-error">Ошибка загрузки: ${error.message}</td></tr>`;
-    }
+    const tbodies = ["routers-tbody", "sessions-tbody", "users-tbody"];
+    const spans = [6, 8, 8];
+    tbodies.forEach((id, i) => {
+      const tb = document.querySelector(`#${id}`);
+      if (tb) tb.innerHTML = `<tr><td colspan="${spans[i]}" class="table-error">Ошибка загрузки: ${escapeHtml(error.message)}</td></tr>`;
+    });
   }
 }
 
@@ -345,27 +533,185 @@ function renderRoutersTable(routers) {
   if (!tbody) return;
 
   if (routers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Нет данных о роутерах</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="table-empty">Нет роутеров. Откройте «Конфиг», чтобы создать профиль/роутер.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = "";
-  for (const router of routers) {
+  routers.sort((a, b) => {
+    if (a._isOnline !== b._isOnline) return a._isOnline ? -1 : 1;
+    return String(a._name).localeCompare(String(b._name), "ru");
+  });
+  for (const r of routers) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><strong>${escapeHtml(router._name)}</strong></td>
-      <td>${escapeHtml(router._lanSubnet)}</td>
-      <td>${escapeHtml(router._ssid)}</td>
       <td>
-        <span class="status-badge ${router._isOnline ? "status-online" : "status-offline"}">
-          ${router._isOnline ? "Онлайн" : "Оффлайн"}
+        <strong>${escapeHtml(r._name)}</strong>
+        ${r._profileName ? `<div class="muted small">${escapeHtml(r._profileName)}</div>` : ""}
+      </td>
+      <td><code class="mono">${escapeHtml(r._vpnLogin)}</code></td>
+      <td>${escapeHtml(r._lanSubnet)}</td>
+      <td>${escapeHtml(r._ssid)}</td>
+      <td>
+        <span class="status-badge ${r._isOnline ? "status-online" : "status-offline"}">
+          ${r._isOnline ? "Онлайн" : "Оффлайн"}
         </span>
       </td>
-      <td>${escapeHtml(router._uptime)}</td>
-      <td class="traffic-value">${escapeHtml(router._traffic)}</td>
+      <td>${escapeHtml(r._uptime)}</td>
+      <td class="traffic-value">${escapeHtml(r._traffic)}</td>
+      <td>
+        <a class="btn btn-secondary btn-sm" href="index.html?profileId=${encodeURIComponent(r.profileId || "")}&routerId=${encodeURIComponent(r._router_id || "")}">Открыть</a>
+      </td>
     `;
     tbody.appendChild(tr);
   }
+}
+
+function renderSessionsTable(sessions) {
+  const tbody = document.querySelector("#sessions-tbody");
+  if (!tbody) return;
+  if (sessions.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="table-empty">Активных сессий нет. Когда MikroTik подключится — сессия появится.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = "";
+  sessions.sort((a, b) => (b.uptime_seconds || 0) - (a.uptime_seconds || 0));
+  for (const s of sessions) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>
+        ${s.router_name ? `<strong>${escapeHtml(s.router_name)}</strong>` : `<span class="muted">—</span>`}
+        ${s.router_id != null ? `<div class="muted small">ID #${s.router_id}</div>` : ""}
+      </td>
+      <td><code class="mono">${escapeHtml(s.vpn_username || "—")}</code></td>
+      <td>
+        <span class="pill pill-proto">${escapeHtml((s.protocol || "ppp").toUpperCase())}</span>
+      </td>
+      <td><code class="mono">${escapeHtml(s.interface || "—")}</code></td>
+      <td>${escapeHtml(s.ip_address || "—")}</td>
+      <td>${escapeHtml(s.lan_subnet || "—")}</td>
+      <td>${escapeHtml(s.uptime_human || "—")}</td>
+      <td class="traffic-value">${escapeHtml(s.traffic_human || "0 B")}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderUsersTable(users) {
+  const tbody = document.querySelector("#users-tbody");
+  if (!tbody) return;
+  if (users.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="table-empty">VPN пользователей нет. Добавьте первого вручную или нажмите «VPN Sync» — подтянутся из роутеров (поля l2tp/sstp/pppoe).</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = "";
+  users.sort((a, b) => {
+    if (a.online !== b.online) return a.online ? -1 : 1;
+    return String(a.username).localeCompare(String(b.username), "ru");
+  });
+  for (const u of users) {
+    const tr = document.createElement("tr");
+    const routerRef = u.router_name
+      ? `<strong>${escapeHtml(u.router_name)}</strong>${u.router_id ? `<div class="muted small">ID #${u.router_id}</div>` : ""}`
+      : `<span class="muted">Вручную добавлен</span>`;
+    tr.innerHTML = `
+      <td><code class="mono">${escapeHtml(u.username)}</code></td>
+      <td>${routerRef}</td>
+      <td>
+        <span class="status-badge ${u.online ? "status-online" : "status-offline"}">
+          ${u.online ? "Подключён" : "Неактивен"}
+        </span>
+      </td>
+      <td>${u.protocol ? `<span class="pill pill-proto">${escapeHtml(u.protocol.toUpperCase())}</span>` : `<span class="muted">—</span>`}</td>
+      <td><code class="mono">${escapeHtml(u.ip_address_active || u.ip_address || "*")}</code></td>
+      <td>${escapeHtml(u.uptime_human || "—")}</td>
+      <td class="traffic-value">${escapeHtml(u.traffic_human || "0 B")}</td>
+      <td>
+        <div class="actions-col">
+          <button class="btn btn-secondary btn-sm btn-edit-user" data-username="${encodeURIComponent(u.username)}">✎ Редактировать</button>
+          <button class="btn btn-danger btn-sm btn-delete-user" data-username="${encodeURIComponent(u.username)}">🗑 Удалить</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  tbody.querySelectorAll(".btn-edit-user").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const uname = decodeURIComponent(btn.getAttribute("data-username") || "");
+      const user = users.find((u) => u.username === uname);
+      if (user) openVpnUserModal(user);
+    });
+  });
+  tbody.querySelectorAll(".btn-delete-user").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const uname = decodeURIComponent(btn.getAttribute("data-username") || "");
+      if (!confirm(`Удалить VPN пользователя "${uname}"?\n(он будет удалён из chap-secrets, VPN туннель MikroTik отвалится)`)) return;
+      try {
+        await apiFetch(`/api/vpn/users/${encodeURIComponent(uname)}`, { method: "DELETE" });
+        await loadDashboardData();
+      } catch (e) {
+        alert(`❌ Ошибка удаления: ${e.message}`);
+      }
+    });
+  });
+}
+
+function openVpnUserModal(user) {
+  const modal = document.querySelector("#vpn-user-modal");
+  if (!modal) return;
+  const title = modal.querySelector("#vpn-user-modal-title");
+  const orig = modal.querySelector("#vpn-user-original");
+  const u = modal.querySelector("#vpn-user-username");
+  const p = modal.querySelector("#vpn-user-password");
+  const ip = modal.querySelector("#vpn-user-ip");
+  const statusNode = modal.querySelector("#vpn-user-status");
+
+  if (statusNode) {
+    statusNode.style.display = "none";
+    statusNode.className = "status";
+    statusNode.textContent = "";
+  }
+  ["vpn-user-username", "vpn-user-password"].forEach((id) => {
+    const err = modal.querySelector(`[data-error-for="${id}"]`);
+    if (err) err.textContent = "";
+  });
+
+  if (user) {
+    if (title) title.textContent = `Редактировать: ${user.username}`;
+    if (orig) orig.value = user.username;
+    if (u) u.value = user.username;
+    if (p) p.value = user.password || "";
+    if (ip) ip.value = user.ip_address || "*";
+  } else {
+    if (title) title.textContent = "Добавить VPN пользователя";
+    if (orig) orig.value = "";
+    if (u) u.value = "";
+    if (p) p.value = generatePassword(14);
+    if (ip) ip.value = "*";
+  }
+  modal.style.display = "flex";
+  setTimeout(() => u && u.focus(), 60);
+}
+
+function closeVpnUserModal() {
+  const modal = document.querySelector("#vpn-user-modal");
+  if (!modal) return;
+  modal.style.display = "none";
+}
+
+function generatePassword(len) {
+  len = len || 14;
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&_-+";
+  let out = "";
+  if (window.crypto && window.crypto.getRandomValues) {
+    const arr = new Uint32Array(len);
+    window.crypto.getRandomValues(arr);
+    for (let i = 0; i < len; i++) out += chars[arr[i] % chars.length];
+  } else {
+    for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
 }
 
 function formatTraffic(mb) {

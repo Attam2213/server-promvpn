@@ -744,3 +744,151 @@ h2 {
 .modal-header h2 {
   margin: 0 0 6px 0;
 }
+
+/* --- Dashboard Tabs --- */
+.tab-panel {
+  display: none;
+}
+.tab-panel-active {
+  display: block;
+  animation: fadeIn 150ms ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Status badges --- */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.status-badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-online {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+.status-online::before { background: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.18); }
+.status-offline {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
+}
+.status-offline::before { background: #6b7280; }
+
+/* --- Pill / Protocol --- */
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.pill-proto {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  font-weight: 600;
+}
+
+/* --- Typography helpers --- */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  background: rgba(99, 102, 241, 0.06);
+  color: #4338ca;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.muted { color: #94a3b8; }
+.small { font-size: 11.5px; margin-top: 2px; }
+
+/* --- Buttons tiny --- */
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+.btn-danger {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+.btn-danger:hover { background: #fecaca; color: #991b1b; }
+
+.actions-col {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* --- Table states --- */
+.table-loading,
+.table-empty,
+.table-error {
+  text-align: center;
+  padding: 30px 20px !important;
+  color: #94a3b8;
+  font-style: italic;
+}
+.table-empty { color: #64748b; }
+.table-error { color: #b91c1c; font-style: normal; }
+
+/* --- Stat meta --- */
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stat-meta {
+  margin: 4px 0 0 0;
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+
+/* --- Field row (password with generate btn) --- */
+.field-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.field-row .field-input {
+  flex: 1;
+}
+.field-row .btn {
+  white-space: nowrap;
+  padding: 0 14px;
+}
+
+#vpn-user-form .field { margin-bottom: 14px; }
+#vpn-user-form .button-row {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* --- Responsive tables --- */
+@media (max-width: 980px) {
+  #routers-table th:nth-child(2),
+  #routers-table td:nth-child(2),
+  #routers-table th:nth-child(4),
+  #routers-table td:nth-child(4),
+  #sessions-table th:nth-child(4),
+  #sessions-table td:nth-child(4),
+  #sessions-table th:nth-child(6),
+  #sessions-table td:nth-child(6),
+  #users-table th:nth-child(5),
+  #users-table td:nth-child(5) {
+    display: none;
+  }
+}

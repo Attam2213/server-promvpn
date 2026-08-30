@@ -1,0 +1,275 @@
+#!/bin/bash
+#
+# accel-ppp (SSTP/L2TP/PPTP server) — source build installer
+# ---------------------------------------------------------
+# Compiles from GitHub accel-ppp/accel-ppp (modern maintained fork)
+# Dependencies: build-essential cmake git linux-headers libssl-dev libpcre3-dev libev-dev
+# Env overrides:
+#   VPN_PUBLIC_IP  — bind SSTP/TCP and IP-helper socket to this IP (default 0.0.0.0)
+#   ACCEL_GIT_URL  — git URL (default github)
+#   ACCEL_GIT_REF  — branch/tag/commit (default master)
+#
+
+set -e
+
+BOLD='\033[1m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+info()  { echo -e "${BOLD}[INFO]${NC}  $1"; }
+ok()    { echo -e "${GREEN}[ OK ]${NC}  $1"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
+err()   { echo -e "${RED}[FAIL]${NC}  $1" >&2; }
+
+if [ "$(id -u)" -ne 0 ]; then
+    err "Run as root: sudo bash build_accel_ppp.sh"
+    exit 1
+fi
+
+: "${VPN_PUBLIC_IP:=0.0.0.0}"
+: "${ACCEL_GIT_URL:=https://github.com/accel-ppp/accel-ppp.git}"
+: "${ACCEL_GIT_REF:=master}"
+: "${BUILD_DIR:=/tmp/accel-ppp-build}"
+: "${SRC_DIR:=/usr/local/src/accel-ppp}"
+
+DNS1="${DNS1:-8.8.8.8}"
+DNS2="${DNS2:-1.1.1.1}"
+PPP_START="${PPP_START:-10.255.1.100}"
+PPP_END="${PPP_END:-10.255.1.200}"
+SSTP_PORT="${SSTP_PORT:-443}"
+SSTP_LOCAL_IP="${SSTP_LOCAL_IP:-10.255.1.1}"
+
+echo "=========================================="
+echo "  accel-ppp SSTP source build installer"
+echo "  repo: $ACCEL_GIT_URL ($ACCEL_GIT_REF)"
+echo "  bind VPN_IP: $VPN_PUBLIC_IP"
+echo "  SSTP TCP port: $SSTP_PORT"
+echo "=========================================="
+
+export DEBIAN_FRONTEND=noninteractive
+
+info "Installing build dependencies..."
+apt-get update -y -qq || true
+apt-get install -y -qq --no-install-recommends \
+  build-essential cmake git ca-certificates \
+  libssl-dev libpcre3-dev libev-dev pkg-config \
+  linux-headers-$(uname -r) 2>&1 | tail -5 || \
+  apt-get install -y -qq --no-install-recommends linux-headers-generic 2>&1 | tail -3 || true
+ok "Build deps installed"
+
+info "Cloning accel-ppp sources..."
+rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
+if [ -d "$SRC_DIR/.git" ]; then
+    info "Updating existing source in $SRC_DIR"
+    (cd "$SRC_DIR" && git fetch --tags --depth 1 2>/dev/null || git pull --ff-only 2>/dev/null || true)
+else
+    mkdir -p "$(dirname "$SRC_DIR")"
+    git clone --depth 1 --branch "$ACCEL_GIT_REF" "$ACCEL_GIT_URL" "$SRC_DIR" 2>&1 | tail -3
+fi
+[ -d "$SRC_DIR/accel-pppd" ] || {
+    err "accel-ppp source checkout FAIL: missing accel-pppd dir after clone"
+    exit 2
+}
+ok "Sources ready"
+
+info "CMake configure..."
+(
+  cd "$BUILD_DIR" && rm -f CMakeCache.txt
+  cmake "$SRC_DIR" \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_DRIVER=FALSE \
+    -DSHAPER=FALSE \
+    -DNETSNMP=FALSE \
+    -DRADIUS=FALSE \
+    -DMEMDEBUG=FALSE \
+    -DSSTP=TRUE \
+    -DPPTP=FALSE \
+    -DL2TP=FALSE \
+    -DIPOE=FALSE \
+    -DPPPOE=FALSE \
+    -DLOG_FILE=TRUE \
+    -DLOG_TCP=FALSE \
+    -DLOG_SYSLOG=TRUE 2>&1 | tail -20
+)
+ok "cmake configure done"
+
+BUILD_JOBS="$(nproc 2>/dev/null || echo 2)"
+info "Compiling with -j$BUILD_JOBS (takes 2-10 minutes)..."
+( cd "$BUILD_DIR" && make -j"$BUILD_JOBS" 2>&1 | tail -30 )
+ok "Compiled"
+
+info "Installing binaries to /usr..."
+( cd "$BUILD_DIR" && make install 2>&1 | tail -10 )
+
+# accel-cmd CLI usually installs to /usr/bin — ensure PATH symlink
+[ -x /usr/sbin/accel-pppd ] || ln -sf /usr/bin/accel-pppd /usr/sbin/accel-pppd 2>/dev/null || true
+[ -x /usr/sbin/accel-cmd ]   || ln -sf /usr/bin/accel-cmd   /usr/sbin/accel-cmd   2>/dev/null || true
+ldconfig || true
+ok "accel-ppp installed. Binaries: $(command -v accel-pppd || echo NOTFOUND) / $(command -v accel-cmd || echo NOTFOUND)"
+
+info "Creating config directories + chap-secrets..."
+mkdir -p /etc/accel-ppp/conf /var/log/accel-ppp /var/run/accel-ppp
+touch /etc/accel-ppp/conf/chap-secrets
+chmod 600 /etc/accel-ppp/conf/chap-secrets
+
+info "Writing /etc/accel-ppp/accel-ppp.conf (SSTP bind=$VPN_PUBLIC_IP:$SSTP_PORT)..."
+cat > /etc/accel-ppp/accel-ppp.conf << EOF
+[modules]
+log_file
+log_syslog
+sstp
+auth
+chap-msv2
+ippool
+connlimit
+
+[core]
+log-error=/var/log/accel-ppp/core.log
+thread-count=4
+
+[common]
+single-session=replace
+sid-case=upper
+sid-source=seq
+
+[connlimit]
+limit=0
+timeout=60
+burst=3
+
+[log]
+log-file=/var/log/accel-ppp/accel-ppp.log
+log-emerg=/var/log/accel-ppp/emerg.log
+log-fail-file=/var/log/accel-ppp/auth-fail.log
+log-syslog=daemon
+syslog-facility=daemon
+syslog-level=notice
+copy=3
+default=error
+
+[ppp]
+verbose=1
+min-mtu=1280
+mtu=1420
+mru=1420
+ipv4=require
+ipv6=deny
+mtu-disc=yes
+lcp-echo-failure=4
+lcp-echo-interval=30
+check-ip=0
+
+[dns]
+dns1=$DNS1
+dns2=$DNS2
+
+[sstp]
+host=$VPN_PUBLIC_IP
+port=$SSTP_PORT
+verbose=1
+certificate=/etc/accel-ppp/certs/sstp.crt
+private-key=/etc/accel-ppp/certs/sstp.key
+ca-certificate=/etc/accel-ppp/certs/ca.crt
+# To use SSTP WITHOUT TLS certificate validation on clients (self-signed):
+# ssl-check-hostname=0
+
+[ip-pool]
+gw-ip-address=$SSTP_LOCAL_IP
+$PPP_START-$PPP_END
+
+[chap-msv2]
+
+[auth]
+any-login=0
+noauth=0
+# /etc/accel-ppp/conf/chap-secrets is in standard tab-separated chap-secrets format
+# This path matches backend VpnManager.ACCEL_PPP_SECRETS_PATH
+secrets=/etc/accel-ppp/conf/chap-secrets
+EOF
+ok "accel-ppp.conf written"
+
+info "Generating self-signed SSTP certificate (valid 10 years)..."
+mkdir -p /etc/accel-ppp/certs
+CERT_CN="${CERT_CN:-$VPN_PUBLIC_IP}"
+if [ ! -f /etc/accel-ppp/certs/sstp.key ] || [ ! -f /etc/accel-ppp/certs/sstp.crt ]; then
+    (
+      cd /etc/accel-ppp/certs
+      openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout sstp.key \
+        -out sstp.crt \
+        -days 3650 \
+        -subj "/C=RU/ST=Moscow/L=Moscow/O=PromVpn/OU=SSTP/CN=$CERT_CN" 2>/dev/null
+      cp -f sstp.crt ca.crt
+      chmod 600 sstp.key
+      chmod 644 sstp.crt ca.crt
+    )
+    ok "Self-signed cert generated /etc/accel-ppp/certs/sstp.crt (CN=$CERT_CN)"
+else
+    info "Using existing certificate at /etc/accel-ppp/certs/"
+fi
+
+info "Installing systemd unit /etc/systemd/system/accel-ppp.service..."
+cat > /etc/systemd/system/accel-ppp.service << 'EOF'
+[Unit]
+Description=accel-ppp VPN server (SSTP/L2TP)
+After=network-online.target syslog.target
+Wants=network-online.target
+Documentation=https://accel-ppp.org/
+
+[Service]
+Type=forking
+PIDFile=/var/run/accel-ppp/accel-ppp.pid
+ExecStart=/usr/sbin/accel-pppd -c /etc/accel-ppp/accel-ppp.conf -p /var/run/accel-ppp/accel-ppp.pid -d
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+LimitNPROC=65536
+# allow raw sockets for IP helper (if enabled)
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_RESOURCE CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable accel-ppp 2>/dev/null || true
+ok "systemd unit accel-ppp.service installed + enabled"
+
+if command -v ss >/dev/null 2>&1 && ss -tln | grep -qE "[:.]443\s"; then
+    warn "TCP port 443 already LISTENING on host — accel-ppp might fail to bind SSTP socket. Check netstat/ss."
+fi
+
+info "Restarting accel-ppp..."
+systemctl restart accel-ppp 2>/dev/null || {
+    warn "accel-ppp start failed. Check: journalctl -u accel-ppp -n 50"
+}
+sleep 1
+
+if systemctl is-active --quiet accel-ppp 2>/dev/null; then
+    ok "✅ accel-ppp (SSTP) is running!"
+    if command -v accel-cmd >/dev/null 2>&1; then
+        info "accel-cmd CLI: run 'accel-cmd show sessions' to view active SSTP sessions"
+    fi
+else
+    warn "accel-ppp did not start — review: journalctl -u accel-ppp -n 60"
+fi
+
+echo ""
+echo "=========================================="
+echo -e "  ${GREEN}SSTP accel-ppp source build DONE${NC}"
+echo "=========================================="
+echo ""
+echo "  Config      : /etc/accel-ppp/accel-ppp.conf"
+echo "  Secrets file: /etc/accel-ppp/conf/chap-secrets (synced by UI VPN Sync)"
+echo "  Cert        : /etc/accel-ppp/certs/sstp.crt  (self-signed, copy to Windows/MikroTik trusted store if needed)"
+echo "  Key         : /etc/accel-ppp/certs/sstp.key"
+echo "  Systemd     : systemctl restart accel-ppp  /  journalctl -u accel-ppp -f"
+echo "  Sessions    : accel-cmd show sessions"
+echo ""
+echo "  MikroTik SSTP client: /interface sstp-client add connect-to=$VPN_PUBLIC_IP user=<router> password=<pass> certificate=add-to-store"
+echo "  (self-signed cert: disable TLS verify or import sstp.crt on MikroTik)"

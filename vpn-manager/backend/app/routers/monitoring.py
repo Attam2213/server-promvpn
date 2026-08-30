@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from ..services.vpn_monitor import VpnMonitor
+from ..database import SessionLocal
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
-_monitor = VpnMonitor()
+_monitor = VpnMonitor(db_session_factory=SessionLocal)
 
 
 @router.get("/sessions")

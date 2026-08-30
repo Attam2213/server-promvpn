@@ -115,12 +115,25 @@ elif command -v strongswan >/dev/null 2>&1; then
 fi
 
 if [ "$INSTALL_SSTP" = "yes" ]; then
-    info "Trying to install accel-ppp (SSTP)..."
+    info "Trying to install accel-ppp (SSTP) via apt..."
+    SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
     if apt-get install -y -qq accel-ppp 2>/dev/null; then
-        ok "accel-ppp installed"
+        ok "accel-ppp installed via apt"
         SSTP_OK="yes"
     else
-        warn "accel-ppp package not found in standard repos. SSTP skipped."
+        warn "accel-ppp package not found in standard Ubuntu repos. Switching to SOURCE BUILD (github accel-ppp/accel-ppp)."
+        BUILDER="$SCRIPT_DIR/build_accel_ppp.sh"
+        if [ -x "$BUILDER" ] || [ -f "$BUILDER" ]; then
+            chmod +x "$BUILDER" 2>/dev/null || true
+            export VPN_PUBLIC_IP DNS1 DNS2 PPP_START PPP_END
+            if bash "$BUILDER"; then
+                SSTP_OK="yes"
+            else
+                warn "Source build reported non-zero status. accel-ppp may still be partially installed."
+            fi
+        else
+            warn "build_accel_ppp.sh not found at $BUILDER. SSTP skipped."
+        fi
     fi
 fi
 
@@ -277,9 +290,9 @@ ok "/etc/ppp/options.xl2tpd written"
 if [ "$SSTP_OK" = "yes" ]; then
 echo ""
 echo "=========================================="
-echo "  Configuring accel-ppp (SSTP) — listen on $VPN_PUBLIC_IP:943"
+echo "  Configuring accel-ppp (SSTP) — listen on $VPN_PUBLIC_IP:443"
 echo "=========================================="
-mkdir -p /etc/accel-ppp /var/log/accel-ppp
+mkdir -p /etc/accel-ppp /var/log/accel-ppp /etc/accel-ppp/conf
 cat > /etc/accel-ppp.conf << EOF
 [modules]
 log_file
@@ -308,8 +321,8 @@ default=error
 [ppp]
 verbose=1
 min-mtu=1280
-mtu=1410
-mru=1410
+mtu=1420
+mru=1420
 ipv4=require
 ipv6=deny
 mtu-disc=yes
@@ -322,7 +335,7 @@ dns2=$DNS2
 
 [sstp]
 host=$VPN_PUBLIC_IP
-port=943
+port=443
 verbose=1
 
 [ip-pool]
@@ -334,8 +347,11 @@ gw-ip-address=10.255.1.1
 [auth]
 any-login=0
 noauth=0
+secrets=/etc/accel-ppp/conf/chap-secrets
 EOF
-ok "/etc/accel-ppp.conf written (SSTP on $VPN_PUBLIC_IP:943"
+touch /etc/accel-ppp/conf/chap-secrets
+chmod 600 /etc/accel-ppp/conf/chap-secrets
+ok "/etc/accel-ppp.conf written (SSTP on $VPN_PUBLIC_IP:443)"
 fi
 
 echo ""
@@ -382,7 +398,7 @@ iptables -A INPUT -d $VPN_PUBLIC_IP -p udp --dport 1701 -j ACCEPT
 iptables -A INPUT -d $VPN_PUBLIC_IP -p esp -j ACCEPT
 iptables -A INPUT -d $VPN_PUBLIC_IP -p ah -j ACCEPT
 if [ "$SSTP_OK" = "yes" ]; then
-    iptables -A INPUT -d $VPN_PUBLIC_IP -p tcp --dport 943 -j ACCEPT
+    iptables -A INPUT -d $VPN_PUBLIC_IP -p tcp --dport 443 -j ACCEPT
 fi
 
 # FORWARD
@@ -422,7 +438,7 @@ ufw allow to any port 500 proto udp from any to $VPN_PUBLIC_IP 2>/dev/null || uf
 ufw allow to any port 4500 proto udp from any to $VPN_PUBLIC_IP 2>/dev/null || ufw allow 4500/udp
 ufw allow to any port 1701 proto udp from any to $VPN_PUBLIC_IP 2>/dev/null || ufw allow 1701/udp
 if [ "$SSTP_OK" = "yes" ]; then
-ufw allow to any port 943 proto tcp from any to $VPN_PUBLIC_IP 2>/dev/null || ufw allow 943/tcp
+ufw allow to any port 443 proto tcp from any to $VPN_PUBLIC_IP 2>/dev/null || ufw allow 443/tcp
 fi
 ufw --force enable 2>/dev/null || true
 ok "UFW enabled with per-IP port restrictions"
@@ -474,7 +490,7 @@ check_svc xl2tpd
 if command -v ss >/dev/null 2>&1; then
 echo ""
 echo "  LISTENING PORTS (public services on $VPN_PUBLIC_IP + $MGMT_IP):"
-ss -tulpn | grep -E ":(22|8000|500|1701|4500|943) 2>/dev/null | head -20 || true
+ss -tulpn 2>/dev/null | grep -E ":(22|8000|500|1701|4500|443)\b" | head -20 || true
 fi
 
 echo ""
@@ -487,7 +503,7 @@ echo "VPN_PUBLIC_IP (tunnels): $VPN_PUBLIC_IP (MikroTik L2TP connects HERE)"
 echo "IPsec PSK           : $IPSEC_PSK"
 echo "L2TP ports (on $VPN_PUBLIC_IP): UDP 500/4500/1701 + ESP"
 echo "L2TP PPP range      : $PPP_START - $PPP_END"
-echo "SSTP status         : $([ "$SSTP_OK" = "yes" ] && echo "TCP 943 on $VPN_PUBLIC_IP" || echo "SKIPPED")"
+echo "SSTP status         : $([ "$SSTP_OK" = "yes" ] && echo "TCP 443 on $VPN_PUBLIC_IP (accel-ppp SSTP server)" || echo "SKIPPED")"
 echo "DNS servers         : $DNS1, $DNS2"
 echo "Main interface      : $MAIN_IF"
 echo ""
