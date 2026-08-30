@@ -1244,14 +1244,37 @@ async function initConfigPage() {
     }
   }
 
+  function mergeSchemaDefaults(values, schemaFields) {
+    const merged = { ...(values || {}) };
+    if (!Array.isArray(schemaFields)) return merged;
+    for (const field of schemaFields) {
+      const id = field && field.id;
+      if (!id) continue;
+      const current = merged[id];
+      const isCheckbox = field.type === "checkbox";
+      const empty =
+        current === undefined ||
+        current === null ||
+        (!isCheckbox && current === "");
+      if (empty && field.default !== undefined && field.default !== null) {
+        merged[id] = field.default;
+      }
+    }
+    return merged;
+  }
+
   async function refreshPreview() {
     const router = getActiveRouter();
     if (!router || !previewNode) return;
 
     try {
+      const mergedValues = mergeSchemaDefaults(
+        router.values || {},
+        state.schema && state.schema.fields
+      );
       const validation = await apiFetch("/api/configs/validate", {
         method: "POST",
-        body: JSON.stringify({ values: router.values || {} }),
+        body: JSON.stringify({ values: mergedValues }),
       });
 
       renderErrors(validation.errors || {});
@@ -1265,7 +1288,7 @@ async function initConfigPage() {
 
       const buildResult = await apiFetch("/api/configs/build", {
         method: "POST",
-        body: JSON.stringify({ values: router.values || {} }),
+        body: JSON.stringify({ values: mergedValues }),
       });
 
       if (typeof buildResult === "string") {
@@ -1312,9 +1335,13 @@ async function initConfigPage() {
     if (!router) return;
 
     try {
+      const mergedValues = mergeSchemaDefaults(
+        router.values || {},
+        state.schema && state.schema.fields
+      );
       const validation = await apiFetch("/api/configs/validate", {
         method: "POST",
-        body: JSON.stringify({ values: router.values || {} }),
+        body: JSON.stringify({ values: mergedValues }),
       });
       renderErrors(validation.errors || {});
 
@@ -1325,7 +1352,7 @@ async function initConfigPage() {
 
       const buildResult = await apiFetch("/api/configs/build", {
         method: "POST",
-        body: JSON.stringify({ values: router.values || {} }),
+        body: JSON.stringify({ values: mergedValues }),
       });
 
       const content = typeof buildResult === "string" ? buildResult : (buildResult?.content || "");
@@ -1546,9 +1573,13 @@ async function initConfigPage() {
 
         for (const router of profile.routers) {
           try {
+            const mergedValues = mergeSchemaDefaults(
+              router.values || {},
+              state.schema && state.schema.fields
+            );
             const validation = await apiFetch("/api/configs/validate", {
               method: "POST",
-              body: JSON.stringify({ values: router.values || {} }),
+              body: JSON.stringify({ values: mergedValues }),
             });
             if (validation.valid) {
               validRouters.push(router);
@@ -1569,9 +1600,13 @@ async function initConfigPage() {
           const router = validRouters[i];
           await new Promise((resolve) => setTimeout(resolve, i * 250));
           try {
+            const mergedValues = mergeSchemaDefaults(
+              router.values || {},
+              state.schema && state.schema.fields
+            );
             const buildResult = await apiFetch("/api/configs/build", {
               method: "POST",
-              body: JSON.stringify({ values: router.values || {} }),
+              body: JSON.stringify({ values: mergedValues }),
             });
             const content = typeof buildResult === "string" ? buildResult : (buildResult?.content || "");
             const fileName = buildResult?.filename || buildFileName(router.values || {});

@@ -61,7 +61,27 @@ class ConfigGenerator:
             return self.load_template("pppoe.rsc")
         return self.load_template("conff.rsc")
 
+    def _apply_schema_defaults(self, values: dict) -> dict:
+        if not self.schema:
+            return values or {}
+        merged = dict(values or {})
+        for field in self.schema.get("fields", []):
+            field_id = field.get("id")
+            if not field_id:
+                continue
+            field_type = field.get("type", "text")
+            default = field.get("default")
+            current = merged.get(field_id)
+            is_empty = (
+                current is None
+                or (field_type not in ("checkbox",) and current == "")
+            )
+            if is_empty and default is not None:
+                merged[field_id] = default
+        return merged
+
     def validate(self, values: dict) -> dict:
+        values = self._apply_schema_defaults(values)
         errors = {}
         has_wifi = values.get("hasWifi", True) is not False
         l2tp_enabled = values.get("enableL2tp", True) is not False
@@ -190,6 +210,7 @@ class ConfigGenerator:
         }
 
     def build_config(self, values: dict, template_dir: str = None) -> str:
+        values = self._apply_schema_defaults(values)
         config = self._get_template_for_wan(values.get("wanType", "automatic"), template_dir)
         newline = "\r\n" if "\r\n" in config else "\n"
 

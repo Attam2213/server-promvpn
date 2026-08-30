@@ -247,8 +247,8 @@
       "section": "SSTP",
       "type": "text",
       "required": true,
-      "default": "185.253.182.24:943",
-      "placeholder": "vpn.example.com:943",
+      "default": "185.253.182.24:443",
+      "placeholder": "vpn.example.com:443",
       "help": "Адрес SSTP сервера вместе с портом."
     },
     {
