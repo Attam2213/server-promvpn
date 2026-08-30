@@ -1244,9 +1244,29 @@ async function initConfigPage() {
     }
   }
 
+  const LEGACY_L2TP_IPS = new Set(["185.253.182.24", "111.111.111.11"]);
+  const LEGACY_SSTP_TAGS = [":943", "185.253.182.24:", "111.111.111.111:"];
+
   function mergeSchemaDefaults(values, schemaFields) {
     const merged = { ...(values || {}) };
     if (!Array.isArray(schemaFields)) return merged;
+
+    const schemaMap = new Map(schemaFields.map((f) => [f.id, f]));
+    const defaultL2tp = schemaMap.get("l2tpServer")?.default;
+    const defaultSstp = schemaMap.get("sstpServer")?.default;
+
+    const l2tpCurrent = merged.l2tpServer;
+    if (l2tpCurrent && defaultL2tp) {
+      const hit = [...LEGACY_L2TP_IPS].some((ip) => String(l2tpCurrent).includes(ip));
+      if (hit) merged.l2tpServer = defaultL2tp;
+    }
+    const sstpCurrent = merged.sstpServer;
+    if (sstpCurrent && defaultSstp) {
+      const sstpStr = String(sstpCurrent);
+      const hit = LEGACY_SSTP_TAGS.some((tag) => sstpStr.includes(tag)) || sstpStr.endsWith(":943");
+      if (hit) merged.sstpServer = defaultSstp;
+    }
+
     for (const field of schemaFields) {
       const id = field && field.id;
       if (!id) continue;

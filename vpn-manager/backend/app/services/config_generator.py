@@ -61,10 +61,32 @@ class ConfigGenerator:
             return self.load_template("pppoe.rsc")
         return self.load_template("conff.rsc")
 
+    _LEGACY_L2TP_IPS = {"185.253.182.24", "111.111.111.11"}
+    _LEGACY_SSTP_SUFFIXES = (":943", "185.253.182.24:", "111.111.111.111:")
+
     def _apply_schema_defaults(self, values: dict) -> dict:
         if not self.schema:
             return values or {}
         merged = dict(values or {})
+
+        default_l2tp = None
+        default_sstp = None
+        for field in self.schema.get("fields", []):
+            if field.get("id") == "l2tpServer":
+                default_l2tp = field.get("default")
+            elif field.get("id") == "sstpServer":
+                default_sstp = field.get("default")
+
+        l2tp_current = merged.get("l2tpServer")
+        if l2tp_current and default_l2tp:
+            if any(legacy in str(l2tp_current) for legacy in self._LEGACY_L2TP_IPS):
+                merged["l2tpServer"] = default_l2tp
+        sstp_current = merged.get("sstpServer")
+        if sstp_current and default_sstp:
+            sstp_str = str(sstp_current)
+            if any(tag in sstp_str for tag in self._LEGACY_SSTP_SUFFIXES) or sstp_str.endswith(":943"):
+                merged["sstpServer"] = default_sstp
+
         for field in self.schema.get("fields", []):
             field_id = field.get("id")
             if not field_id:
