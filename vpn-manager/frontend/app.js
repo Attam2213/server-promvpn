@@ -1199,7 +1199,9 @@ async function initConfigPage() {
     input.addEventListener(eventName, async () => {
       const previousValues = { ...(router.values || {}) };
       router.values = router.values || {};
-      router.values[field.id] = readControlValue(input, field.type);
+      const newValue = readControlValue(input, field.type);
+      router.values[field.id] = newValue;
+      _ST(`INPUT ${field.id} (type=${field.type}, ev=${eventName})`, { newValue, prevVal: previousValues[field.id] });
 
       if (field.id === "lanOctet") {
         syncDnsServerWithLan(previousValues, router.values);
@@ -1219,10 +1221,12 @@ async function initConfigPage() {
 
       try {
         if (router.id) {
-          await apiFetch(`/api/profiles/${getActiveProfile().id}/routers/${router.id}`, {
+          _ST(`SAVE PUT /routers/${router.id} START`, { name: router.name, valuesKeys: Object.keys(router.values).length });
+          const saveRes = await apiFetch(`/api/profiles/${getActiveProfile().id}/routers/${router.id}`, {
             method: "PUT",
             body: JSON.stringify({ name: router.name, values: router.values }),
           });
+          _ST(`SAVE PUT /routers/${router.id} OK`, saveRes?.id ? { savedId: saveRes.id } : saveRes);
         }
 
         if (needRerender) {
@@ -1233,8 +1237,10 @@ async function initConfigPage() {
         }
 
         await refreshPreview();
+        _ST(`INPUT ${field.id} refreshPreview OK`, { previewLen: previewNode?.value?.length });
       } catch (err) {
-        setStatus(`Ошибка сохранения: ${err.message}`, "error");
+        console.error(`[INPUT-ERROR ${field.id}]`, err?.stack || err);
+        setStatus(`Ошибка сохранения поля "${field.label}": ${err.message}`, "error");
       }
     });
 
@@ -1403,16 +1409,19 @@ async function initConfigPage() {
   async function refreshPreview() {
     const router = getActiveRouter();
     if (!router || !previewNode) return;
+    _ST("refreshPreview: start", { routerId: router.id, routerName: router.name });
 
     try {
       const mergedValues = mergeSchemaDefaults(
         router.values || {},
         state.schema && state.schema.fields
       );
+      _ST("refreshPreview: POST validate START", { mergedLen: Object.keys(mergedValues).length });
       const validation = await apiFetch("/api/configs/validate", {
         method: "POST",
         body: JSON.stringify({ values: mergedValues }),
       });
+      _ST("refreshPreview: POST validate OK", { valid: validation.valid, errCount: Object.keys(validation.errors || {}).length });
 
       renderErrors(validation.errors || {});
       const isValid = validation.valid;
@@ -1420,9 +1429,11 @@ async function initConfigPage() {
 
       if (!isValid) {
         previewNode.value = "# Есть ошибки в форме.\n# Исправьте подсвеченные поля, чтобы получить итоговый конфиг.";
+        _ST("refreshPreview: INVALID, set error preview");
         return;
       }
 
+      _ST("refreshPreview: POST build START");
       const buildResult = await apiFetch("/api/configs/build", {
         method: "POST",
         body: JSON.stringify({ values: mergedValues }),
@@ -1435,8 +1446,11 @@ async function initConfigPage() {
       } else {
         previewNode.value = String(buildResult || "");
       }
+      _ST("refreshPreview: build OK", { previewLen: previewNode.value.length });
     } catch (error) {
+      console.error("[refreshPreview: ERROR]", error?.stack || error);
       previewNode.value = `# Ошибка сборки конфига:\n# ${error.message}`;
+      setStatus(`Ошибка предпросмотра: ${error.message}`, "error");
     }
   }
 
