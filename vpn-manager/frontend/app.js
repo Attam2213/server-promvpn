@@ -10,9 +10,13 @@ window.addEventListener("error", (event) => {
 window.addEventListener("unhandledrejection", (event) => {
   console.error(`[APP-PROMISE-ERROR]`, event.reason?.stack || event.reason);
 });
-const _ST = (label, val) => {
-  console.log(`[TRACE] ${label}`, val !== undefined ? val : "ok");
-};
+
+const _DEBUG_TRACE_ON =
+  typeof window !== "undefined" &&
+  new URL(window.location.href || "http://x").searchParams.get("debug") === "1";
+const _ST = _DEBUG_TRACE_ON
+  ? (label, val) => console.log(`[TRACE] ${label}`, val !== undefined ? val : "ok")
+  : () => {};
 
 const LEGACY_L2TP_IPS = new Set(["185.253.182.24", "111.111.111.11"]);
 const LEGACY_SSTP_TAGS = [":943", "185.253.182.24:", "111.111.111.111:"];
@@ -1776,6 +1780,12 @@ async function initConfigPage() {
   }
 
   function autoInitPage() {
+    if (window._vpnAppInitRan) {
+      if (_DEBUG_TRACE_ON) console.error("[INIT-GUARD] autoInitPage called twice, PREVENTED double init (window._vpnAppInitRan=true)");
+      return;
+    }
+    window._vpnAppInitRan = true;
+
     if (document.getElementById("config-form")) {
       initConfigPage();
       return;
