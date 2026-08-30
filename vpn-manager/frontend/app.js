@@ -34,10 +34,16 @@ function redirectToLogin() {
 
 async function apiFetch(url, options = {}) {
   const token = getToken();
+  const userHeaders = options.headers || {};
   const headers = {
-    ...(options.headers || {}),
-    "Content-Type": "application/json",
+    ...(userHeaders["Content-Type"] === undefined
+      ? { "Content-Type": "application/json" }
+      : {}),
+    ...userHeaders,
   };
+  if (headers["Content-Type"] === null || headers["Content-Type"] === undefined) {
+    delete headers["Content-Type"];
+  }
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
@@ -57,10 +63,30 @@ async function apiFetch(url, options = {}) {
     let errorMessage = `HTTP ${response.status}`;
     try {
       const errorData = await response.json();
-      errorMessage = errorData.detail || errorData.message || errorMessage;
+      const detail = errorData.detail || errorData.message;
+      if (Array.isArray(detail)) {
+        errorMessage = detail
+          .map((e) => {
+            if (typeof e === "string") return e;
+            if (e && e.msg && e.loc) {
+              const where = Array.isArray(e.loc) ? e.loc.join(".") : "";
+              return where ? `${where}: ${e.msg}` : String(e.msg);
+            }
+            if (e && e.message) return String(e.message);
+            if (e && e.msg) return String(e.msg);
+            try {
+              return JSON.stringify(e);
+            } catch {
+              return String(e);
+            }
+          })
+          .join("; ");
+      } else if (detail) {
+        errorMessage = String(detail);
+      }
     } catch {
       try {
-        errorMessage = await response.text() || errorMessage;
+        errorMessage = (await response.text()) || errorMessage;
       } catch {}
     }
     throw new Error(errorMessage);
@@ -167,9 +193,16 @@ function initLoginPage() {
     statusNode.className = "status status-loading";
 
     try {
+      const formBody = new URLSearchParams();
+      formBody.append("username", username);
+      formBody.append("password", password);
+
       const result = await apiFetch("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ username, password }),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        },
+        body: formBody.toString(),
       });
 
       if (result.access_token) {
