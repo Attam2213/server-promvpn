@@ -10,7 +10,7 @@
 #   ACCEL_GIT_REF  — branch/tag/commit (default master)
 #
 
-set -e
+set -euo pipefail
 
 BOLD='\033[1m'
 GREEN='\033[0;32m'
@@ -52,11 +52,20 @@ export DEBIAN_FRONTEND=noninteractive
 
 info "Installing build dependencies..."
 apt-get update -y -qq || true
+# accel-ppp upstream cmake checks first for libpcre (libpcre2-8) then falls back to pcre3.
+# Install BOTH to avoid "Required libpcre not found."
 apt-get install -y -qq --no-install-recommends \
-  build-essential cmake git ca-certificates \
-  libssl-dev libpcre3-dev libev-dev pkg-config \
+  build-essential cmake git ca-certificates pkg-config \
+  libssl-dev libev-dev \
+  libpcre2-dev libpcre3-dev libpcre++-dev \
   linux-headers-$(uname -r) 2>&1 | tail -5 || \
-  apt-get install -y -qq --no-install-recommends linux-headers-generic 2>&1 | tail -3 || true
+  apt-get install -y -qq --no-install-recommends linux-headers-generic libpcre2-dev libpcre3-dev libpcre++-dev 2>&1 | tail -3 || true
+# Sanity check — at least one pcre must be present, else hard fail
+if ! ldconfig -p | grep -Eq 'libpcre(2-8|3)?\.so' && \
+   ! ( dpkg -l libpcre2-dev libpcre3-dev 2>/dev/null | grep -q '^ii' ); then
+    err "Could not install libpcre2-dev / libpcre3-dev — required for accel-ppp regex module."
+    exit 3
+fi
 ok "Build deps installed"
 
 info "Cloning accel-ppp sources..."
@@ -93,17 +102,27 @@ info "CMake configure..."
     -DPPPOE=FALSE \
     -DLOG_FILE=TRUE \
     -DLOG_TCP=FALSE \
-    -DLOG_SYSLOG=TRUE 2>&1 | tail -20
+    -DLOG_SYSLOG=TRUE 2>&1 | tail -40
 )
+if [ ! -f "$BUILD_DIR/Makefile" ] && [ ! -f "$BUILD_DIR/build.ninja" ]; then
+    err "cmake configure FAILED — see tail above (most often missing libpcre/libssl/libev)."
+    err "Install manually: apt install -y libpcre2-dev libpcre3-dev libssl-dev libev-dev, then retry."
+    exit 4
+fi
 ok "cmake configure done"
 
 BUILD_JOBS="$(nproc 2>/dev/null || echo 2)"
 info "Compiling with -j$BUILD_JOBS (takes 2-10 minutes)..."
-( cd "$BUILD_DIR" && make -j"$BUILD_JOBS" 2>&1 | tail -30 )
+( cd "$BUILD_DIR" && make -j"$BUILD_JOBS" 2>&1 | tail -50 )
+if [ ! -x "$BUILD_DIR/accel-pppd/accel-pppd" ] && \
+   [ ! -x "$BUILD_DIR/accel-pppd" ]; then
+    err "make compile FAILED — no accel-pppd binary produced. Check build output above."
+    exit 5
+fi
 ok "Compiled"
 
 info "Installing binaries to /usr..."
-( cd "$BUILD_DIR" && make install 2>&1 | tail -10 )
+( cd "$BUILD_DIR" && make install 2>&1 | tail -20 )
 
 # accel-cmd CLI usually installs to /usr/bin — ensure PATH symlink
 [ -x /usr/sbin/accel-pppd ] || ln -sf /usr/bin/accel-pppd /usr/sbin/accel-pppd 2>/dev/null || true
