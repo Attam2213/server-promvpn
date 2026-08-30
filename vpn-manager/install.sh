@@ -30,10 +30,6 @@ FRONTEND_DIR="${FRONTEND_DIR:-$PROJECT_ROOT/frontend}"
 ADMIN_PASSWORD_ENV="${ADMIN_PASSWORD:-}"
 PASSLIB_SCHEME_ENV="${PASSLIB_SCHEME:-sha256_crypt}"
 
-MGMT_IP="${MGMT_IP:-}"
-VPN_PUBLIC_IP="${VPN_PUBLIC_IP:-}"
-APP_LISTEN_IP="${APP_LISTEN_IP:-${MGMT_IP:-0.0.0.0}}"
-
 echo ""
 echo "========================================================="
 echo "  VPN VDS Manager — INSTALL"
@@ -42,6 +38,33 @@ echo "  PWD    : $PROJECT_ROOT"
 echo "  User   : $APP_USER  (systemd service)"
 echo "  Port   : $APP_PORT"
 echo "========================================================="
+echo ""
+
+if [[ -z "$MGMT_IP" ]] || [[ -z "$VPN_PUBLIC_IP" ]]; then
+    echo "Поддержка 2-х публичных IP: MGMT (панель + SSH) и VPN_PUBLIC_IP (L2TP/IPsec туннели)."
+    echo "Если у тебя только 1 IP — вводи один и тот же адрес дважды."
+    echo ""
+fi
+if [[ -z "$MGMT_IP" ]]; then
+    DEF_MGMT=$(curl -s --max-time 5 https://ifconfig.me 2>/dev/null || true)
+    read -p "  MGMT_IP (для панели :8000 + SSH :22) [${DEF_MGMT:-<auto>}]: " MGMT_IP
+    MGMT_IP=${MGMT_IP:-$DEF_MGMT}
+    if [[ -z "$MGMT_IP" ]]; then
+        echo "Введите MGMT_IP вручную или повторите запуск с ENV: MGMT_IP=X.X.X.X VPN_PUBLIC_IP=Y.Y.Y.Y sudo bash install.sh"
+        exit 1
+    fi
+fi
+if [[ -z "$VPN_PUBLIC_IP" ]]; then
+    read -p "  VPN_PUBLIC_IP (для L2TP/IPsec туннелей с MikroTik) [${MGMT_IP}]: " VPN_PUBLIC_IP
+    VPN_PUBLIC_IP=${VPN_PUBLIC_IP:-$MGMT_IP}
+fi
+export MGMT_IP="$MGMT_IP"
+export VPN_PUBLIC_IP="$VPN_PUBLIC_IP"
+
+APP_LISTEN_IP="${APP_LISTEN_IP:-${MGMT_IP}}"
+echo "MGMT_IP      = $MGMT_IP (FastAPI :$APP_PORT будет слушать ЗДЕСЬ)"
+echo "VPN_PUBLIC_IP = $VPN_PUBLIC_IP (тут только L2TP/IPsec :500/:1701/:4500)"
+echo "APP_LISTEN_IP = $APP_LISTEN_IP (хост --host для uvicorn)"
 echo ""
 
 info "1/7. Обновляем индексы пакетов и ставим системные зависимости..."
