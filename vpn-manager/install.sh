@@ -53,13 +53,35 @@ if [[ ! -f "$PROJECT_ROOT/backend/requirements.txt" ]]; then
     if [[ -d server-promvpn ]]; then rm -rf server-promvpn; fi
     git clone --depth 1 "$REPO_URL" server-promvpn || true
     if [[ -d server-promvpn/vpn-manager ]]; then
-        mkdir -p "$PROJECT_ROOT"
-        cp -a server-promvpn/vpn-manager/. "$PROJECT_ROOT/"
+        mkdir -p "$(dirname "$PROJECT_ROOT")"
+        rm -rf "$PROJECT_ROOT"
+        mv server-promvpn "$(dirname "$PROJECT_ROOT")/.." 2>/dev/null || true
+        if [[ -d "/tmp/server-promvpn/vpn-manager" ]]; then
+            TMP_PARENT="/tmp/server-promvpn"
+            TARGET_PARENT="$(dirname "$PROJECT_ROOT")"
+            if [[ ! -d "$TARGET_PARENT/server-promvpn/.git" ]]; then
+                mkdir -p "$TARGET_PARENT"
+                rm -rf "$TARGET_PARENT/server-promvpn"
+                mv /tmp/server-promvpn "$TARGET_PARENT/server-promvpn" || cp -a /tmp/server-promvpn "$TARGET_PARENT/server-promvpn"
+            fi
+            if [[ -d "$TARGET_PARENT/server-promvpn/vpn-manager" ]]; then
+                if [[ ! -e "$PROJECT_ROOT" ]]; then
+                    ln -s "$TARGET_PARENT/server-promvpn/vpn-manager" "$PROJECT_ROOT" 2>/dev/null || true
+                fi
+            fi
+        fi
+        rm -rf /tmp/server-promvpn 2>/dev/null || true
     fi
-    rm -rf server-promvpn
-    cd "$PROJECT_ROOT"
+    if [[ ! -f "$PROJECT_ROOT/backend/requirements.txt" ]]; then
+        warn "Не удалось клонировать — требуется ручная установка:"
+        echo "    cd /opt && git clone $REPO_URL server-promvpn"
+        echo "    ln -s /opt/server-promvpn/vpn-manager $PROJECT_ROOT"
+    fi
 else
     info "2/7. Проект уже найден локально — шаг с клонированием пропущен."
+    if [[ ! -d "$PROJECT_ROOT/.git" ]] && [[ -d "$PROJECT_ROOT/../.git" ]] && [[ "$(basename "$(dirname "$PROJECT_ROOT")")" == "server-promvpn" ]]; then
+        ok "Найден родительский git-репозиторий — update.sh будет работать через родительский .git"
+    fi
 fi
 
 info "3/7. Создаём Python venv и ставим зависимости..."
