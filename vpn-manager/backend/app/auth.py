@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -12,16 +13,50 @@ from .database import get_db
 from .models import User
 from .schemas import TokenData
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def _build_crypt_context():
+    schemes = []
+    preferred = os.environ.get("PASSLIB_SCHEME", "").strip().lower()
+    if preferred == "bcrypt":
+        schemes.append("bcrypt")
+    elif preferred == "sha256_crypt":
+        schemes.append("sha256_crypt")
+    elif preferred:
+        schemes.append(preferred)
+    schemes.extend(["bcrypt", "sha256_crypt"])
+    try:
+        ctx = CryptContext(schemes=schemes, deprecated="auto")
+        test_hash = ctx.hash("test")
+        if ctx.verify("test", test_hash):
+            return ctx
+    except Exception as e:
+        print(f"[!] CryptContext with {schemes} failed: {e}")
+    return CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+
+pwd_context = _build_crypt_context()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        print(f"[!] verify_password error: {e}")
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    try:
+        return pwd_context.hash(password)
+    except ValueError as ve:
+        if "longer than 72 bytes" in str(ve) or "truncate" in str(ve):
+            print(f"[!] bcrypt 72-byte limit hit, fallback to sha256_crypt for long password: {ve}")
+            ctx = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+            return ctx.hash(password)
+        raise
+    except Exception as e:
+        print(f"[!] get_password_hash fallback: {e}")
+        ctx = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+        return ctx.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

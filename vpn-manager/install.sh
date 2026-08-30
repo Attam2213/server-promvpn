@@ -27,6 +27,8 @@ APP_SERVICE_NAME="vpn-manager"
 APP_PORT="${APP_PORT:-8000}"
 APP_USER="${APP_USER:-root}"
 FRONTEND_DIR="${FRONTEND_DIR:-$PROJECT_ROOT/frontend}"
+ADMIN_PASSWORD_ENV="${ADMIN_PASSWORD:-}"
+PASSLIB_SCHEME_ENV="${PASSLIB_SCHEME:-sha256_crypt}"
 
 echo ""
 echo "========================================================="
@@ -107,27 +109,31 @@ fi
 
 info "5/7. Создаём systemd юнит $APP_SERVICE_NAME.service..."
 SERVICE_FILE="/etc/systemd/system/${APP_SERVICE_NAME}.service"
-cat > "$SERVICE_FILE" <<SYSTEMD
-[Unit]
-Description=VPN VDS Manager (FastAPI)
-After=network.target xl2tpd.service accel-ppp.service ipsec.service
-
-[Service]
-Type=simple
-User=$APP_USER
-WorkingDirectory=$BACKEND_DIR
-Environment="PATH=$VENV_DIR/bin"
-Environment="PYTHONUNBUFFERED=1"
-Environment="FRONTEND_DIR=$FRONTEND_DIR"
-ExecStart=$VENV_DIR/bin/uvicorn app.main:app --host 0.0.0.0 --port $APP_PORT
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-SYSTEMD
+{
+echo "[Unit]"
+echo "Description=VPN VDS Manager (FastAPI)"
+echo "After=network.target xl2tpd.service accel-ppp.service ipsec.service"
+echo ""
+echo "[Service]"
+echo "Type=simple"
+echo "User=$APP_USER"
+echo "WorkingDirectory=$BACKEND_DIR"
+echo "Environment=\"PATH=$VENV_DIR/bin\""
+echo "Environment=\"PYTHONUNBUFFERED=1\""
+echo "Environment=\"FRONTEND_DIR=$FRONTEND_DIR\""
+echo "Environment=\"PASSLIB_SCHEME=$PASSLIB_SCHEME_ENV\""
+if [[ -n "$ADMIN_PASSWORD_ENV" ]]; then
+    echo "Environment=\"ADMIN_PASSWORD=$ADMIN_PASSWORD_ENV\""
+fi
+echo "ExecStart=$VENV_DIR/bin/uvicorn app.main:app --host 0.0.0.0 --port $APP_PORT"
+echo "Restart=always"
+echo "RestartSec=5"
+echo "StandardOutput=journal"
+echo "StandardError=journal"
+echo ""
+echo "[Install]"
+echo "WantedBy=multi-user.target"
+} > "$SERVICE_FILE"
 ok "Юнит записан: $SERVICE_FILE"
 
 systemctl daemon-reload || true

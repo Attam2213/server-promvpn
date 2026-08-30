@@ -29,14 +29,16 @@ def _create_default_admin():
     try:
         user_count = db.query(User).count()
         if user_count == 0:
+            env_pw = os.environ.get("ADMIN_PASSWORD", "").strip()
+            default_pw = env_pw if env_pw else "admin"
             admin = User(
                 username="admin",
-                hashed_password=get_password_hash("admin"),
+                hashed_password=get_password_hash(default_pw),
                 is_admin=True,
             )
             db.add(admin)
             db.commit()
-            print("[+] Default admin created: admin / admin")
+            print(f"[+] Default admin created: admin / {'<from ADMIN_PASSWORD env>' if env_pw else 'admin (CHANGE THIS!)'}")
     except Exception as e:
         print(f"[!] Warning: failed to create default admin: {e}")
     finally:
