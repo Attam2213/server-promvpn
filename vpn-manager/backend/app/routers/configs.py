@@ -31,8 +31,9 @@ async def get_schema():
 
 
 @router.post("/validate")
-async def validate_config(values: dict = Body(...)):
+async def validate_config(body: dict = Body(...)):
     try:
+        values = body.get("values", body)
         result = _config_generator.validate(values)
         return result
     except Exception as e:
@@ -40,8 +41,9 @@ async def validate_config(values: dict = Body(...)):
 
 
 @router.post("/build")
-async def build_config(values: dict = Body(...)):
+async def build_config(body: dict = Body(...)):
     try:
+        values = body.get("values", body)
         validation = _config_generator.validate(values)
         if not validation["valid"]:
             raise HTTPException(

@@ -208,7 +208,7 @@
       "section": "L2TP",
       "type": "text",
       "required": true,
-      "default": "185.253.182.24",
+      "default": "157.22.205.210",
       "placeholder": "vpn.example.com",
       "help": "Адрес основного L2TP сервера."
     },
@@ -247,7 +247,7 @@
       "section": "SSTP",
       "type": "text",
       "required": true,
-      "default": "185.253.182.24:443",
+      "default": "157.22.205.210:443",
       "placeholder": "vpn.example.com:443",
       "help": "Адрес SSTP сервера вместе с портом."
     },

@@ -31,7 +31,7 @@ add name=dhcp ranges=192.168.актет.50-192.168.актет.100
 add address-pool=dhcp disabled=no interface=bridge name=defconf
 #подключение к главному серверу. ставить уникальный user=?
 /interface sstp-client
-add connect-to=111.111.111.111:943 disabled=no name=sstp_vpn password=\
+add connect-to=111.111.111.111:443 disabled=no name=sstp_vpn password=\
     Qwerty1111 profile=default-encryption user=vpn09
 /interface bridge port
 add bridge=bridge comment=defconf interface=ether2

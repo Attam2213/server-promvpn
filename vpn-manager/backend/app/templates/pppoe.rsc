@@ -23,7 +23,7 @@ add name=dhcp ranges=192.168.142.50-192.168.142.100
 /ip dhcp-server
 add address-pool=dhcp disabled=no interface=bridge name=defconf
 /interface sstp-client
-add connect-to=185.253.182.24:943 disabled=no name=sstp_vpn password=\
+add connect-to=185.253.182.24:443 disabled=no name=sstp_vpn password=\
     qweqwe profile=default-encryption user=ddd
 /interface bridge port
 add bridge=bridge comment=defconf interface=ether2

@@ -1293,8 +1293,8 @@ async function initConfigPage() {
 
       if (typeof buildResult === "string") {
         previewNode.value = buildResult;
-      } else if (buildResult && buildResult.content) {
-        previewNode.value = buildResult.content;
+      } else if (buildResult && (buildResult.config_text || buildResult.content)) {
+        previewNode.value = buildResult.config_text || buildResult.content;
       } else {
         previewNode.value = String(buildResult || "");
       }
@@ -1355,8 +1355,8 @@ async function initConfigPage() {
         body: JSON.stringify({ values: mergedValues }),
       });
 
-      const content = typeof buildResult === "string" ? buildResult : (buildResult?.content || "");
-      const fileName = buildResult?.filename || buildFileName(router.values || {});
+      const content = typeof buildResult === "string" ? buildResult : (buildResult?.config_text || buildResult?.content || "");
+      const fileName = buildResult?.file_name || buildResult?.filename || buildFileName(router.values || {});
       downloadText(fileName, content);
       setStatus(`Скачан файл ${fileName}.`, "success");
     } catch (error) {
@@ -1608,8 +1608,8 @@ async function initConfigPage() {
               method: "POST",
               body: JSON.stringify({ values: mergedValues }),
             });
-            const content = typeof buildResult === "string" ? buildResult : (buildResult?.content || "");
-            const fileName = buildResult?.filename || buildFileName(router.values || {});
+            const content = typeof buildResult === "string" ? buildResult : (buildResult?.config_text || buildResult?.content || "");
+            const fileName = buildResult?.file_name || buildResult?.filename || buildFileName(router.values || {});
             downloadText(fileName, content);
           } catch (error) {
             console.error("Download error:", error);
