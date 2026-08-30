@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.db
+vpn_manager.db
+vpn_users.json
+node_modules/
+.DS_Store
+.idea/
+.vscode/
+*.log

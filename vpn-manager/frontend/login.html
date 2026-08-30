@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VPN/VDS Manager - Вход</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="login-layout">
+      <div class="login-card panel">
+        <div class="login-header">
+          <p class="eyebrow">VPN/VDS Manager</p>
+          <h1>Вход в систему</h1>
+          <p class="subtitle">Введите учетные данные для доступа к панели управления.</p>
+        </div>
+
+        <form id="login-form" class="login-form" novalidate>
+          <label class="field">
+            <span class="field-label">Логин</span>
+            <input
+              class="field-input"
+              type="text"
+              id="username"
+              name="username"
+              placeholder="Введите логин"
+              autocomplete="username"
+              required
+            />
+            <span class="field-error" data-error-for="username"></span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Пароль</span>
+            <input
+              class="field-input"
+              type="password"
+              id="password"
+              name="password"
+              placeholder="Введите пароль"
+              autocomplete="current-password"
+              required
+            />
+            <span class="field-error" data-error-for="password"></span>
+          </label>
+
+          <button type="submit" id="login-btn" class="btn btn-primary btn-login">
+            Войти
+          </button>
+        </form>
+
+        <div id="login-status" class="status status-loading" style="display: none;"></div>
+      </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

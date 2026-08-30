@@ -1,0 +1,398 @@
+{
+  "fields": [
+    {
+      "id": "routerName",
+      "label": "Название роутера",
+      "section": "Идентификация",
+      "type": "text",
+      "required": true,
+      "default": "Orlan31",
+      "placeholder": "Точка 31",
+      "help": "Имя записи в списке роутеров и профиле."
+    },
+    {
+      "id": "adminMac",
+      "label": "MAC адрес MikroTik",
+      "section": "Идентификация",
+      "type": "text",
+      "required": true,
+      "default": "B8:69:F4:EF:36:2C",
+      "placeholder": "AA:BB:CC:DD:EE:FF",
+      "help": "Уникальный MAC для bridge admin-mac.",
+      "validation": {
+        "pattern": "^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$",
+        "message": "Введите MAC в формате AA:BB:CC:DD:EE:FF"
+      }
+    },
+    {
+      "id": "hasWifi",
+      "label": "Есть Wi-Fi",
+      "section": "Wi-Fi",
+      "type": "checkbox",
+      "required": false,
+      "default": true,
+      "help": "Если выключить, блоки `wireless` и `wlan1` не попадут в итоговый конфиг."
+    },
+    {
+      "id": "ssid",
+      "label": "SSID",
+      "section": "Wi-Fi",
+      "type": "text",
+      "required": true,
+      "default": "Orlan31",
+      "placeholder": "Office-AP-01",
+      "help": "Название Wi-Fi сети."
+    },
+    {
+      "id": "wifiPassword",
+      "label": "Пароль Wi-Fi",
+      "section": "Wi-Fi",
+      "type": "password",
+      "required": true,
+      "default": "QazXdr3579!",
+      "placeholder": "Надежный пароль",
+      "help": "Используется для WPA и WPA2."
+    },
+    {
+      "id": "wanType",
+      "label": "Тип WAN подключения",
+      "section": "WAN",
+      "type": "select",
+      "required": true,
+      "default": "automatic",
+      "options": [
+        {
+          "value": "automatic",
+          "label": "Автоматика (DHCP)"
+        },
+        {
+          "value": "pppoe",
+          "label": "PPPoE"
+        },
+        {
+          "value": "static",
+          "label": "Static"
+        }
+      ],
+      "help": "Определяет WAN схему: DHCP-клиент, PPPoE или статический адрес."
+    },
+    {
+      "id": "wanInterface",
+      "label": "WAN интерфейс",
+      "section": "WAN",
+      "type": "text",
+      "required": true,
+      "default": "ether1",
+      "placeholder": "ether1",
+      "help": "Физический интерфейс для провайдера. Для PoE-in устройств это обычно тот же `ether1`."
+    },
+    {
+      "id": "pppoeUsername",
+      "label": "PPPoE логин",
+      "section": "WAN",
+      "type": "text",
+      "required": true,
+      "default": "",
+      "placeholder": "610601",
+      "help": "Логин PPPoE провайдера для `ether1`."
+    },
+    {
+      "id": "pppoePassword",
+      "label": "PPPoE пароль",
+      "section": "WAN",
+      "type": "password",
+      "required": true,
+      "default": "",
+      "placeholder": "Пароль PPPoE",
+      "help": "Пароль PPPoE провайдера."
+    },
+    {
+      "id": "staticWanIp",
+      "label": "Static WAN IP",
+      "section": "WAN",
+      "type": "text",
+      "required": true,
+      "default": "",
+      "placeholder": "10.0.0.2",
+      "help": "IP адрес WAN интерфейса `ether1`."
+    },
+    {
+      "id": "staticWanNetmask",
+      "label": "Static WAN маска",
+      "section": "WAN",
+      "type": "select",
+      "required": true,
+      "default": "255.255.255.0",
+      "options": [
+        {
+          "value": "255.0.0.0",
+          "label": "255.0.0.0 (/8)"
+        },
+        {
+          "value": "255.255.0.0",
+          "label": "255.255.0.0 (/16)"
+        },
+        {
+          "value": "255.255.255.0",
+          "label": "255.255.255.0 (/24)"
+        },
+        {
+          "value": "255.255.255.128",
+          "label": "255.255.255.128 (/25)"
+        },
+        {
+          "value": "255.255.255.192",
+          "label": "255.255.255.192 (/26)"
+        },
+        {
+          "value": "255.255.255.224",
+          "label": "255.255.255.224 (/27)"
+        },
+        {
+          "value": "255.255.255.240",
+          "label": "255.255.255.240 (/28)"
+        },
+        {
+          "value": "255.255.255.248",
+          "label": "255.255.255.248 (/29)"
+        },
+        {
+          "value": "255.255.255.252",
+          "label": "255.255.255.252 (/30)"
+        }
+      ],
+      "help": "Маска подсети для статического WAN."
+    },
+    {
+      "id": "staticWanGateway",
+      "label": "Static WAN шлюз",
+      "section": "WAN",
+      "type": "text",
+      "required": true,
+      "default": "",
+      "placeholder": "10.0.0.1",
+      "help": "Шлюз провайдера для статического WAN."
+    },
+    {
+      "id": "staticWanDns1",
+      "label": "Static WAN DNS 1",
+      "section": "WAN",
+      "type": "text",
+      "required": true,
+      "default": "",
+      "placeholder": "8.8.8.8",
+      "help": "Основной DNS сервер для статического WAN."
+    },
+    {
+      "id": "staticWanDns2",
+      "label": "Static WAN DNS 2",
+      "section": "WAN",
+      "type": "text",
+      "required": false,
+      "default": "",
+      "placeholder": "1.1.1.1",
+      "help": "Дополнительный DNS сервер, если нужен."
+    },
+    {
+      "id": "enableL2tp",
+      "label": "Включить L2TP",
+      "section": "L2TP",
+      "type": "checkbox",
+      "required": false,
+      "default": true,
+      "help": "Создает L2TP клиент и маршруты через `vpn`."
+    },
+    {
+      "id": "l2tpServer",
+      "label": "L2TP сервер",
+      "section": "L2TP",
+      "type": "text",
+      "required": true,
+      "default": "185.253.182.24",
+      "placeholder": "vpn.example.com",
+      "help": "Адрес основного L2TP сервера."
+    },
+    {
+      "id": "l2tpUser",
+      "label": "L2TP логин",
+      "section": "L2TP",
+      "type": "text",
+      "required": true,
+      "default": "vpn199",
+      "placeholder": "vpn199",
+      "help": "Уникальный логин для L2TP туннеля."
+    },
+    {
+      "id": "l2tpPassword",
+      "label": "L2TP пароль",
+      "section": "L2TP",
+      "type": "password",
+      "required": true,
+      "default": "Greml1N2810!",
+      "placeholder": "Пароль L2TP",
+      "help": "Пароль для L2TP туннеля."
+    },
+    {
+      "id": "enableSstp",
+      "label": "Включить SSTP",
+      "section": "SSTP",
+      "type": "checkbox",
+      "required": false,
+      "default": true,
+      "help": "Создает SSTP клиент и маршруты через `sstp_vpn`."
+    },
+    {
+      "id": "sstpServer",
+      "label": "SSTP сервер",
+      "section": "SSTP",
+      "type": "text",
+      "required": true,
+      "default": "185.253.182.24:943",
+      "placeholder": "vpn.example.com:943",
+      "help": "Адрес SSTP сервера вместе с портом."
+    },
+    {
+      "id": "sstpUser",
+      "label": "SSTP логин",
+      "section": "SSTP",
+      "type": "text",
+      "required": true,
+      "default": "vpn199",
+      "placeholder": "vpn199",
+      "help": "Уникальный логин для SSTP туннеля."
+    },
+    {
+      "id": "sstpPassword",
+      "label": "SSTP пароль",
+      "section": "SSTP",
+      "type": "password",
+      "required": true,
+      "default": "Greml1N2810!",
+      "placeholder": "Пароль SSTP",
+      "help": "Пароль для SSTP туннеля."
+    },
+    {
+      "id": "lanOctet",
+      "label": "Третий октет LAN",
+      "section": "LAN",
+      "type": "number",
+      "required": true,
+      "default": 199,
+      "min": 0,
+      "max": 254,
+      "help": "Подставляется в 192.168.X.0/24, DHCP и router.lan."
+    },
+    {
+      "id": "dhcpRangeStart",
+      "label": "Начало DHCP пула",
+      "section": "LAN",
+      "type": "number",
+      "required": true,
+      "default": 50,
+      "min": 2,
+      "max": 254,
+      "help": "Первый адрес клиентов в диапазоне DHCP."
+    },
+    {
+      "id": "dhcpRangeEnd",
+      "label": "Конец DHCP пула",
+      "section": "LAN",
+      "type": "number",
+      "required": true,
+      "default": 100,
+      "min": 2,
+      "max": 254,
+      "help": "Последний адрес клиентов в диапазоне DHCP."
+    },
+    {
+      "id": "lanBridgePorts",
+      "label": "LAN порты в bridge",
+      "section": "LAN",
+      "type": "textarea",
+      "required": true,
+      "default": "ether2\nether3\nether4",
+      "placeholder": "ether2",
+      "help": "Физические LAN порты, по одному на строку. `wlan1` добавится отдельно, если Wi-Fi включен."
+    },
+    {
+      "id": "dnsServer",
+      "label": "DNS сервер для DHCP",
+      "section": "LAN",
+      "type": "text",
+      "required": true,
+      "default": "192.168.199.1",
+      "placeholder": "192.168.199.1",
+      "help": "По умолчанию совпадает с адресом роутера 192.168.X.1, но можно переопределить."
+    },
+    {
+      "id": "prometeyOctet",
+      "label": "Октет сети Прометея",
+      "section": "Маршруты",
+      "type": "number",
+      "required": true,
+      "default": 199,
+      "min": 0,
+      "max": 254,
+      "help": "Используется в маршрутах 192.168.X.0/24 для Прометея."
+    },
+    {
+      "id": "homeRoute",
+      "label": "Домашняя сеть",
+      "section": "Маршруты",
+      "type": "text",
+      "required": true,
+      "default": "192.168.101.0/24",
+      "placeholder": "192.168.101.0/24",
+      "help": "Маршрут для доступа из дома."
+    },
+    {
+      "id": "requiredRoutePrimary",
+      "label": "Обязательный маршрут 1",
+      "section": "Маршруты",
+      "type": "text",
+      "required": true,
+      "default": "172.16.0.0/24",
+      "placeholder": "172.16.0.0/24",
+      "help": "Первый обязательный маршрут. Для него будут созданы маршруты через vpn и sstp_vpn."
+    },
+    {
+      "id": "requiredRouteSecondary",
+      "label": "Обязательный маршрут 2",
+      "section": "Маршруты",
+      "type": "text",
+      "required": true,
+      "default": "192.168.254.0/24",
+      "placeholder": "192.168.254.0/24",
+      "help": "Второй обязательный маршрут. Для него будут созданы маршруты через vpn и sstp_vpn."
+    },
+    {
+      "id": "extraRoutes",
+      "label": "Дополнительные маршруты",
+      "section": "Маршруты",
+      "type": "textarea",
+      "required": false,
+      "default": "",
+      "placeholder": "192.168.200.0/24",
+      "help": "Дополнительные сети, по одной на строку. Для каждой сети будут созданы маршруты через vpn и sstp_vpn."
+    },
+    {
+      "id": "lanInterface",
+      "label": "Интерфейс LAN IP",
+      "section": "LAN",
+      "type": "select",
+      "required": true,
+      "default": "ether2",
+      "options": [
+        {
+          "value": "ether2",
+          "label": "ether2"
+        },
+        {
+          "value": "bridge",
+          "label": "bridge"
+        }
+      ],
+      "help": "Куда назначать адрес LAN. В исходном шаблоне указан ether2."
+    }
+  ]
+}

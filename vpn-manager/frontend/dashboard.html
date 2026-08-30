@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VPN/VDS Manager - Дашборд</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <header class="topbar panel">
+        <div>
+          <p class="eyebrow">VPN/VDS Manager</p>
+          <h1>Дашборд мониторинга</h1>
+        </div>
+
+        <div class="topbar-actions">
+          <button type="button" id="tab-dashboard-btn" class="tab-btn tab-btn-active">
+            Дашборд
+          </button>
+          <a href="index.html" class="tab-btn" role="button">
+            Конфиг
+          </a>
+          <button type="button" id="logout-btn" class="tab-btn tab-btn-danger">
+            Выйти
+          </button>
+        </div>
+      </header>
+
+      <section class="dashboard-panel">
+        <div class="stats-grid">
+          <div class="stat-card panel">
+            <div class="stat-icon stat-icon-total">▦</div>
+            <div class="stat-content">
+              <span class="stat-label">Всего роутеров</span>
+              <strong id="stat-total" class="stat-value">0</strong>
+            </div>
+          </div>
+
+          <div class="stat-card panel">
+            <div class="stat-icon stat-icon-online">●</div>
+            <div class="stat-content">
+              <span class="stat-label">Онлайн</span>
+              <strong id="stat-online" class="stat-value stat-value-success">0</strong>
+            </div>
+          </div>
+
+          <div class="stat-card panel">
+            <div class="stat-icon stat-icon-traffic">↯</div>
+            <div class="stat-content">
+              <span class="stat-label">Трафик всего</span>
+              <strong id="stat-traffic" class="stat-value">0 GB</strong>
+            </div>
+          </div>
+
+          <div class="stat-card panel">
+            <div class="stat-icon stat-icon-offline">○</div>
+            <div class="stat-content">
+              <span class="stat-label">Оффлайн</span>
+              <strong id="stat-offline" class="stat-value stat-value-danger">0</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-actions">
+          <button type="button" id="refresh-btn" class="btn btn-secondary">
+            Обновить сейчас
+          </button>
+          <a href="index.html" class="btn btn-primary">
+            Настройка конфигурации
+          </a>
+          <button type="button" id="vpn-actions-btn" class="btn btn-secondary">
+            VPN действия
+          </button>
+        </div>
+
+        <div class="panel panel-table">
+          <div class="panel-header">
+            <p class="eyebrow">Мониторинг</p>
+            <h2>Список роутеров</h2>
+            <p class="subtitle">
+              Автообновление каждые 10 секунд. Последнее обновление:
+              <span id="last-update">—</span>
+            </p>
+          </div>
+
+          <div class="table-wrapper">
+            <table id="routers-table" class="routers-table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>LAN подсеть</th>
+                  <th>Wi-Fi SSID</th>
+                  <th>Статус</th>
+                  <th>Время подключения</th>
+                  <th>Трафик</th>
+                </tr>
+              </thead>
+              <tbody id="routers-tbody">
+                <tr>
+                  <td colspan="6" class="table-loading">Загрузка данных...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

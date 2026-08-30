@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VPN/VDS Manager - Конфиг</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <header class="topbar panel">
+        <div>
+          <p class="eyebrow">MikroTik</p>
+          <h1>mikrotik master by ILJES</h1>
+        </div>
+
+        <div class="topbar-actions">
+          <a href="dashboard.html" class="tab-btn" role="button">
+            Дашборд
+          </a>
+          <button type="button" id="tab-config-btn" class="tab-btn tab-btn-active">
+            Конфиг
+          </button>
+          <button
+            type="button"
+            id="tab-settings-btn"
+            class="tab-btn tab-btn-icon"
+            aria-label="Открыть настройки"
+            title="Открыть настройки"
+          >
+            &#9881;
+          </button>
+          <button type="button" id="logout-btn" class="tab-btn tab-btn-danger">
+            Выйти
+          </button>
+        </div>
+      </header>
+
+      <section id="config-tab" class="tab-panel tab-panel-active">
+        <div class="workspace-grid">
+          <section class="panel panel-form">
+            <div class="panel-header">
+              <p class="eyebrow">Параметры</p>
+              <h2 id="form-title">Настройка роутера</h2>
+              <p class="subtitle">
+                Изменения применяются к выбранной записи в списке роутеров.
+              </p>
+            </div>
+
+            <form id="config-form" class="form" novalidate></form>
+          </section>
+
+          <main class="panel panel-preview">
+            <div class="panel-header">
+              <p class="eyebrow">Предпросмотр</p>
+              <h2>Готовый RouterOS скрипт</h2>
+              <p class="subtitle">
+                Конфиг обновляется сразу после изменения полей формы.
+              </p>
+            </div>
+
+            <div class="preview-actions">
+              <button type="button" id="download-preview-btn" class="btn btn-primary">
+                Скачать `.rsc` файл
+              </button>
+            </div>
+
+            <div class="meta">
+              <div class="meta-card">
+                <span class="meta-label">Шаблон</span>
+                <strong id="template-name">API сборка</strong>
+              </div>
+              <div class="meta-card">
+                <span class="meta-label">Схема полей</span>
+                <strong id="schema-name">/api/configs/schema</strong>
+              </div>
+            </div>
+
+            <textarea
+              id="preview"
+              class="preview"
+              spellcheck="false"
+              readonly
+            ></textarea>
+          </main>
+        </div>
+      </section>
+
+      <section id="settings-tab" class="tab-panel">
+        <section class="panel panel-settings">
+          <div class="panel-header">
+            <p class="eyebrow">Настройки</p>
+            <h2>Профили и роутеры</h2>
+            <p class="subtitle">
+              Управление профилями, списком устройств и скачиванием конфигов.
+            </p>
+          </div>
+
+          <div class="settings-grid">
+            <section class="settings-section">
+              <div class="section-heading">
+                <h2>Профиль</h2>
+              </div>
+              <div class="profile-controls">
+                <select id="profile-select" class="field-input"></select>
+                <div class="button-row">
+                  <button type="button" id="new-profile-btn" class="btn btn-secondary">
+                    Новый
+                  </button>
+                  <button type="button" id="save-profile-btn" class="btn btn-secondary">
+                    Сохранить
+                  </button>
+                  <button type="button" id="delete-profile-btn" class="btn btn-danger">
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section-wide">
+              <div class="section-heading">
+                <h2>Роутеры</h2>
+                <button type="button" id="add-router-btn" class="btn btn-secondary btn-small">
+                  Добавить
+                </button>
+              </div>
+              <div id="router-list" class="router-list"></div>
+              <div class="button-row">
+                <button type="button" id="duplicate-router-btn" class="btn btn-secondary">
+                  Дублировать
+                </button>
+                <button type="button" id="remove-router-btn" class="btn btn-danger">
+                  Удалить
+                </button>
+              </div>
+            </section>
+
+            <div id="status" class="status status-loading">Загрузка данных...</div>
+
+            <section class="settings-section">
+              <div class="button-column">
+                <button type="button" id="reset-btn" class="btn btn-secondary">
+                  Сбросить роутер
+                </button>
+                <button type="button" id="download-btn" class="btn btn-primary">
+                  Скачать выбранный `.rsc`
+                </button>
+                <button type="button" id="download-all-btn" class="btn btn-primary">
+                  Скачать все конфиги
+                </button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <template id="field-template">
+      <label class="field">
+        <span class="field-label"></span>
+        <span class="field-help"></span>
+        <input class="field-input" />
+        <span class="field-error"></span>
+      </label>
+    </template>
+
+    <template id="router-item-template">
+      <button type="button" class="router-item">
+        <span class="router-name"></span>
+        <span class="router-meta"></span>
+      </button>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
