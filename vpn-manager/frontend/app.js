@@ -885,6 +885,14 @@ async function initConfigPage() {
     state.defaults = getDefaultValues();
     state.profiles = profiles;
 
+    const allRouters = [];
+    for (const p of state.profiles) {
+      if (p.routers) allRouters.push(...p.routers);
+    }
+    if (allRouters.length > 0) {
+      await Promise.all(allRouters.map((r) => ensureMigratedAndPersisted(r)));
+    }
+
     if (state.profiles.length === 0) {
       const newProfile = await apiFetch("/api/profiles", {
         method: "POST",
@@ -954,7 +962,8 @@ async function initConfigPage() {
     }
   }
 
-  function renderAll() {
+  async function renderAll() {
+    await ensureMigratedAndPersisted(getActiveRouter());
     renderTabs();
     renderProfileSelect();
     renderRouterList();
@@ -1040,7 +1049,7 @@ async function initConfigPage() {
       return;
     }
 
-    const values = router.values || {};
+    const values = mergeSchemaDefaults(router.values || {}, state.schema?.fields);
     formTitleNode.textContent = router.name || values.routerName || "Настройка роутера";
     formNode.innerHTML = "";
 
@@ -1110,7 +1119,7 @@ async function initConfigPage() {
 
     if (field.placeholder) input.placeholder = field.placeholder;
 
-    const values = router.values || {};
+    const values = mergeSchemaDefaults(router.values || {}, state.schema?.fields);
     setControlValue(input, field.type, values[field.id]);
     applyFieldState(field, input, wrapper, values);
     wrapper.replaceChild(input, fragment.querySelector(".field-input"));
@@ -1281,6 +1290,31 @@ async function initConfigPage() {
       }
     }
     return merged;
+  }
+
+  function valuesEqual(a, b) {
+    try {
+      return JSON.stringify(a || {}) === JSON.stringify(b || {});
+    } catch {
+      return false;
+    }
+  }
+
+  async function ensureMigratedAndPersisted(router) {
+    if (!router) return;
+    const schemaFields = state.schema && state.schema.fields;
+    if (!Array.isArray(schemaFields)) return;
+    const raw = router.values || {};
+    const merged = mergeSchemaDefaults(raw, schemaFields);
+    if (valuesEqual(raw, merged)) return;
+    router.values = merged;
+    if (!router.id) return;
+    try {
+      await apiFetch(`/api/profiles/${getActiveProfile().id}/routers/${router.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: router.name, values: merged }),
+      });
+    } catch (_err) {}
   }
 
   async function refreshPreview() {
