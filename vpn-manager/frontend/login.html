@@ -15,7 +15,7 @@
           <p class="subtitle">Введите учетные данные для доступа к панели управления.</p>
         </div>
 
-        <form id="login-form" class="login-form" novalidate>
+        <form id="login-form" class="login-form" novalidate onsubmit="return false;">
           <label class="field">
             <span class="field-label">Логин</span>
             <input
@@ -53,6 +53,6 @@
       </div>
     </div>
 
-    <script type="module" src="app.js"></script>
+    <script defer src="app.js"></script>
   </body>
 </html>

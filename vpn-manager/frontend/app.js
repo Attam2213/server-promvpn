@@ -414,7 +414,7 @@ async function initConfigPage() {
       const defaultRouter = createRouterData();
       const createdRouter = await apiFetch(`/api/profiles/${activeProfile.id}/routers`, {
         method: "POST",
-        body: JSON.stringify({ name: defaultRouter.values.routerName, values: defaultRouter.values }),
+        body: JSON.stringify({ name: defaultRouter.name, values: defaultRouter.values }),
       });
       activeProfile.routers = [createdRouter];
       state.activeRouterId = createdRouter.id;
@@ -429,20 +429,23 @@ async function initConfigPage() {
 
   function getDefaultValues() {
     return Object.fromEntries(
-      state.schema.fields.map((field) => [field.id, field.default]),
+      state.schema.fields.map((field) => {
+        let v = field.default;
+        if (v === undefined || v === null) v = "";
+        return [field.id, v];
+      }),
     );
   }
 
   function createRouterData(overrides = {}) {
+    const routerName = overrides.routerName || "Новый MikroTik 1";
     const values = {
       ...state.defaults,
-      routerName: overrides.routerName || "Новый MikroTik 1",
       ...overrides,
     };
     delete values.routerName;
     return {
-      id: null,
-      name: overrides.routerName || "Новый MikroTik 1",
+      name: routerName,
       values,
     };
   }
