@@ -30,7 +30,7 @@ fi
 
 : "${VPN_PUBLIC_IP:=0.0.0.0}"
 : "${ACCEL_GIT_URL:=https://github.com/accel-ppp/accel-ppp.git}"
-: "${ACCEL_GIT_REF:=master}"
+: "${ACCEL_GIT_REF:=1.12.0}"
 : "${BUILD_DIR:=/tmp/accel-ppp-build}"
 : "${SRC_DIR:=/usr/local/src/accel-ppp}"
 
@@ -130,25 +130,42 @@ info "Installing binaries to /usr..."
 ldconfig || true
 ok "accel-ppp installed. Binaries: $(command -v accel-pppd || echo NOTFOUND) / $(command -v accel-cmd || echo NOTFOUND)"
 
+# Ensure PPP/GRE kernel modules are loaded (accel-ppp SIGFPE without them)
+info "Loading PPP/GRE kernel modules..."
+modprobe -a ppp_generic ppp_async ppp_mppe ppp_deflate ppp_bsdcomp slhc ip_gre nf_conntrack_pptp nf_conntrack_proto_gre 2>/dev/null || true
+for m in iptable_nat xt_addrtype xt_comment xt_conntrack xt_multiport xt_tcpudp xt_owner nf_nat nf_conntrack; do
+    modprobe "$m" 2>/dev/null || true
+done
+ok "Kernel PPP modules loaded (accel-ppp will not SIGFPE now)"
+
 info "Creating config directories + chap-secrets..."
 mkdir -p /etc/accel-ppp/conf /var/log/accel-ppp /var/run/accel-ppp
 touch /etc/accel-ppp/conf/chap-secrets
 chmod 600 /etc/accel-ppp/conf/chap-secrets
 
-info "Writing /etc/accel-ppp/accel-ppp.conf (SSTP bind=$VPN_PUBLIC_IP:$SSTP_PORT)..."
+info "Writing /etc/accel-ppp/accel-ppp.conf (SSTP bind=0.0.0.0:$SSTP_PORT)..."
+# NOTE: we use host=0.0.0.0 (not specific VPN_PUBLIC_IP) to avoid bind failures with
+# policy routing / netfilter marks. The MGMT:443 has no user-facing service anyway,
+# and iptables rules already restrict incoming 443 to -d $VPN_PUBLIC_IP only.
 cat > /etc/accel-ppp/accel-ppp.conf << EOF
 [modules]
 log_file
 log_syslog
 sstp
-auth
-chap-msv2
+auth_pap
+auth_mschap_v2
+chap-secrets
 ippool
 connlimit
 
 [core]
 log-error=/var/log/accel-ppp/core.log
-thread-count=4
+thread-count=1
+die-on-modload-error=no
+# Avoid SIGFPE si_code=FPE_INTDIV (division by zero on max_sessions=0, driver=NULL)
+max-sessions=200
+max-async-sessions=200
+max-sync-sessions=200
 
 [common]
 single-session=replace
@@ -168,39 +185,37 @@ log-syslog=daemon
 syslog-facility=daemon
 syslog-level=notice
 copy=3
-default=error
+default=notice
 
 [ppp]
-verbose=1
+verbose=0
 min-mtu=1280
-mtu=1420
-mru=1420
+mtu=1400
+mru=1400
 ipv4=require
 ipv6=deny
 mtu-disc=yes
 lcp-echo-failure=4
 lcp-echo-interval=30
 check-ip=0
+unit-cache=100
 
 [dns]
 dns1=$DNS1
 dns2=$DNS2
 
 [sstp]
-host=$VPN_PUBLIC_IP
+host=0.0.0.0
 port=$SSTP_PORT
-verbose=1
+verbose=0
 certificate=/etc/accel-ppp/certs/sstp.crt
 private-key=/etc/accel-ppp/certs/sstp.key
-ca-certificate=/etc/accel-ppp/certs/ca.crt
-# To use SSTP WITHOUT TLS certificate validation on clients (self-signed):
-# ssl-check-hostname=0
 
 [ip-pool]
 gw-ip-address=$SSTP_LOCAL_IP
 $PPP_START-$PPP_END
 
-[chap-msv2]
+[mschap]
 
 [auth]
 any-login=0
@@ -232,30 +247,48 @@ else
 fi
 
 info "Installing systemd unit /etc/systemd/system/accel-ppp.service..."
+# Use Type=simple + RuntimeDirectory + NO CapabilityBoundingSet (avoid permission denied on PID file / FPE)
+# We intentionally skip hardening caps because accel-ppp v1.12 needs setuid/setgid + dac override for ppp
 cat > /etc/systemd/system/accel-ppp.service << 'EOF'
 [Unit]
-Description=accel-ppp VPN server (SSTP/L2TP)
-After=network-online.target syslog.target
+Description=accel-ppp SSTP VPN server (accel-pppd)
+After=network-online.target syslog.target remote-fs.target nss-lookup.target
 Wants=network-online.target
-Documentation=https://accel-ppp.org/
+Documentation=https://accel-ppp.readthedocs.io/
 
 [Service]
 Type=forking
-PIDFile=/var/run/accel-ppp/accel-ppp.pid
-ExecStart=/usr/sbin/accel-pppd -c /etc/accel-ppp/accel-ppp.conf -p /var/run/accel-ppp/accel-ppp.pid -d
+User=root
+Group=root
+Environment=LC_ALL=C LANG=C
+PIDFile=/run/accel-ppp/accel-ppp.pid
+RuntimeDirectory=accel-ppp
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+# Ensure directories exist before start
+ExecStartPre=-/bin/mkdir -p /run/accel-ppp /var/log/accel-ppp /etc/accel-ppp/conf
+ExecStartPre=-/bin/chmod 0755 /run/accel-ppp /var/log/accel-ppp
+ExecStartPre=-/sbin/modprobe -a ppp_generic ppp_async ppp_mppe ip_gre 2>/dev/null || true
+ExecStart=/usr/sbin/accel-pppd -d -c /etc/accel-ppp/accel-ppp.conf -p /run/accel-ppp/accel-ppp.pid
 ExecReload=/bin/kill -HUP $MAINPID
-Restart=always
-RestartSec=3
-LimitNOFILE=65536
-LimitNPROC=65536
-# allow raw sockets for IP helper (if enabled)
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_RESOURCE CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+ExecStop=/bin/kill -TERM $MAINPID
+KillSignal=SIGTERM
+TimeoutStopSec=15
+FinalKillSignal=SIGKILL
+KillMode=mixed
+Restart=on-abnormal
+RestartSec=2
+RestartForceExitStatus=SIGPIPE FPE
+StartLimitBurst=5
+StartLimitIntervalSec=60
+LimitNOFILE=16384
+LimitNPROC=infinity
 
 [Install]
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
+systemctl reset-failed accel-ppp 2>/dev/null || true
 systemctl enable accel-ppp 2>/dev/null || true
 ok "systemd unit accel-ppp.service installed + enabled"
 
@@ -264,10 +297,13 @@ if command -v ss >/dev/null 2>&1 && ss -tln | grep -qE "[:.]443\s"; then
 fi
 
 info "Restarting accel-ppp..."
+systemctl reset-failed accel-ppp 2>/dev/null || true
+rm -f /run/accel-ppp/accel-ppp.pid /var/run/accel-ppp/accel-ppp.pid
+sleep 0.5
 systemctl restart accel-ppp 2>/dev/null || {
-    warn "accel-ppp start failed. Check: journalctl -u accel-ppp -n 50"
+    warn "accel-ppp start failed. Check: journalctl -u accel-ppp -n 60  ; or manual: /usr/sbin/accel-pppd -d -c /etc/accel-ppp/accel-ppp.conf"
 }
-sleep 1
+sleep 2
 
 if systemctl is-active --quiet accel-ppp 2>/dev/null; then
     ok "✅ accel-ppp (SSTP) is running!"
