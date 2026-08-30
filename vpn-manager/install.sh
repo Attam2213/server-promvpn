@@ -30,6 +30,10 @@ FRONTEND_DIR="${FRONTEND_DIR:-$PROJECT_ROOT/frontend}"
 ADMIN_PASSWORD_ENV="${ADMIN_PASSWORD:-}"
 PASSLIB_SCHEME_ENV="${PASSLIB_SCHEME:-sha256_crypt}"
 
+MGMT_IP="${MGMT_IP:-}"
+VPN_PUBLIC_IP="${VPN_PUBLIC_IP:-}"
+APP_LISTEN_IP="${APP_LISTEN_IP:-${MGMT_IP:-0.0.0.0}}"
+
 echo ""
 echo "========================================================="
 echo "  VPN VDS Manager — INSTALL"
@@ -102,6 +106,8 @@ info "4/7. Устанавливаем L2TP + SSTP VPN сервер (xl2tpd + lib
 VPN_INSTALL="$BACKEND_DIR/scripts/install_vpn.sh"
 if [[ -f "$VPN_INSTALL" ]]; then
     chmod +x "$VPN_INSTALL"
+    export MGMT_IP="$MGMT_IP"
+    export VPN_PUBLIC_IP="$VPN_PUBLIC_IP"
     bash "$VPN_INSTALL" || warn "install_vpn.sh завершился с ошибками — смотри лог выше, поправишь руками потом."
 else
     warn "Не найден $VPN_INSTALL — шаг с VPN пропущен."
@@ -122,10 +128,16 @@ echo "Environment=\"PATH=$VENV_DIR/bin\""
 echo "Environment=\"PYTHONUNBUFFERED=1\""
 echo "Environment=\"FRONTEND_DIR=$FRONTEND_DIR\""
 echo "Environment=\"PASSLIB_SCHEME=$PASSLIB_SCHEME_ENV\""
+if [[ -n "$MGMT_IP" ]]; then
+    echo "Environment=\"MGMT_IP=$MGMT_IP\""
+fi
+if [[ -n "$VPN_PUBLIC_IP" ]]; then
+    echo "Environment=\"VPN_PUBLIC_IP=$VPN_PUBLIC_IP\""
+fi
 if [[ -n "$ADMIN_PASSWORD_ENV" ]]; then
     echo "Environment=\"ADMIN_PASSWORD=$ADMIN_PASSWORD_ENV\""
 fi
-echo "ExecStart=$VENV_DIR/bin/uvicorn app.main:app --host 0.0.0.0 --port $APP_PORT"
+echo "ExecStart=$VENV_DIR/bin/uvicorn app.main:app --host $APP_LISTEN_IP --port $APP_PORT"
 echo "Restart=always"
 echo "RestartSec=5"
 echo "StandardOutput=journal"
