@@ -31,7 +31,8 @@ def create_profile(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_active_admin)
 ):
-    profile = Profile(name=profile_in.name)
+    name = (profile_in.name or "").strip() or "Новый профиль"
+    profile = Profile(name=name)
     db.add(profile)
     db.commit()
     db.refresh(profile)
@@ -66,7 +67,10 @@ def update_profile(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Profile not found"
         )
-    profile.name = profile_in.name
+    if profile_in.name is not None:
+        new_name = (profile_in.name or "").strip()
+        if new_name:
+            profile.name = new_name
     db.commit()
     db.refresh(profile)
     return profile

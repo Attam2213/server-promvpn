@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, Dict, List, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class Token(BaseModel):
@@ -15,6 +15,8 @@ class TokenData(BaseModel):
 class UserBase(BaseModel):
     username: str
     is_admin: bool = False
+
+    model_config = ConfigDict(extra="allow")
 
 
 class UserCreate(UserBase):
@@ -47,6 +49,8 @@ class UserMeResponse(BaseModel):
 class ProfileBase(BaseModel):
     name: str
 
+    model_config = ConfigDict(extra="allow")
+
 
 class ProfileCreate(ProfileBase):
     pass
@@ -71,6 +75,8 @@ class ProfileWithRoutersResponse(ProfileResponse):
 class RouterBase(BaseModel):
     name: str
     values: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
 
 
 class RouterCreate(RouterBase):
@@ -99,6 +105,8 @@ class VpnSessionsBase(BaseModel):
     bytes_in: int = 0
     bytes_out: int = 0
     status: str = "active"
+
+    model_config = ConfigDict(extra="allow")
 
 
 class VpnSessionsCreate(VpnSessionsBase):

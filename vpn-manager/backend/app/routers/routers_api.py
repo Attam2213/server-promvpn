@@ -40,10 +40,14 @@ def create_router(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Profile not found"
         )
+
+    name = (router_in.name or "").strip() or "Новый MikroTik"
+    values = router_in.values or {}
+
     router = Router(
         profile_id=profile_id,
-        name=router_in.name,
-        values=router_in.values
+        name=name,
+        values=values
     )
     db.add(router)
     db.commit()
@@ -88,9 +92,10 @@ def update_router(
             detail="Router not found"
         )
     if router_in.name is not None:
-        router.name = router_in.name
+        new_name = (router_in.name or "").strip() or router.name
+        router.name = new_name
     if router_in.values is not None:
-        router.values = router_in.values
+        router.values = router_in.values or {}
     db.commit()
     db.refresh(router)
     return router
