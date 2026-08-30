@@ -100,6 +100,14 @@ class ConfigGenerator:
             )
             if is_empty and default is not None:
                 merged[field_id] = default
+
+        enable_l2tp = merged.get("enableL2tp")
+        enable_sstp = merged.get("enableSstp")
+        l2tp_off = enable_l2tp is False
+        sstp_off = enable_sstp is False
+        if (l2tp_off and not sstp_off) or (sstp_off and not l2tp_off):
+            merged["enableL2tp"] = True
+            merged["enableSstp"] = True
         return merged
 
     def validate(self, values: dict) -> dict:

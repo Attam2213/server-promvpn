@@ -1365,6 +1365,14 @@ async function initConfigPage() {
         merged[id] = field.default;
       }
     }
+
+    const l2tpOff = merged.enableL2tp === false;
+    const sstpOff = merged.enableSstp === false;
+    if ((l2tpOff && !sstpOff) || (sstpOff && !l2tpOff)) {
+      merged.enableL2tp = true;
+      merged.enableSstp = true;
+    }
+
     return merged;
   }
 
