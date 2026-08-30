@@ -1,6 +1,19 @@
 const TOKEN_KEY = "vpn_vds_manager_token";
 const DEFAULT_PROFILE_NAME = "Основной профиль";
 
+window.addEventListener("error", (event) => {
+  console.error(
+    `[APP-ERROR] ${event.message} at ${event.filename || "?"}:${event.lineno || "?"}:${event.colno || "?"}\n`,
+    event.error ? event.error.stack || event.error : "",
+  );
+});
+window.addEventListener("unhandledrejection", (event) => {
+  console.error(`[APP-PROMISE-ERROR]`, event.reason?.stack || event.reason);
+});
+const _ST = (label, val) => {
+  console.log(`[TRACE] ${label}`, val !== undefined ? val : "ok");
+};
+
 const state = {
   schema: null,
   defaults: {},
@@ -866,6 +879,7 @@ document.addEventListener("submit", async (e) => {
 });
 
 async function initConfigPage() {
+  _ST("initConfigPage: start");
   logoutBtn = document.querySelector("#logout-btn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", () => {
@@ -873,6 +887,7 @@ async function initConfigPage() {
       redirectToLogin();
     });
   }
+  _ST("initConfigPage: logoutBtn done");
 
   configTabNode = document.querySelector("#config-tab");
   settingsTabNode = document.querySelector("#settings-tab");
@@ -896,6 +911,14 @@ async function initConfigPage() {
   deleteProfileButton = document.querySelector("#delete-profile-btn");
   fieldTemplate = document.querySelector("#field-template");
   routerItemTemplate = document.querySelector("#router-item-template");
+  _ST("initConfigPage: DOM refs done", {
+    configTabNode: !!configTabNode,
+    statusNode: !!statusNode,
+    formNode: !!formNode,
+    previewNode: !!previewNode,
+    routerListNode: !!routerListNode,
+    routerItemTemplate: !!routerItemTemplate,
+  });
 
   setStatus("Загрузка схемы и профилей...", "loading");
 
@@ -904,10 +927,12 @@ async function initConfigPage() {
       apiFetch("/api/configs/schema"),
       apiFetch("/api/profiles"),
     ]);
+    _ST("initConfigPage: API done", { schemaFields: schema?.fields?.length, profilesCount: profiles?.length });
 
     state.schema = schema;
     state.defaults = getDefaultValues();
     state.profiles = profiles;
+    _ST("initConfigPage: state filled defaults keys", Object.keys(state.defaults).length);
 
     const allRouters = [];
     for (const p of state.profiles) {
@@ -938,11 +963,18 @@ async function initConfigPage() {
       activeProfile.routers = [createdRouter];
       state.activeRouterId = createdRouter.id;
     }
+    _ST("initConfigPage: active profile/router", {
+      activeProfileId: state.activeProfileId,
+      activeRouterId: state.activeRouterId,
+    });
 
     wireActions();
+    _ST("initConfigPage: wireActions done");
     renderAll();
+    _ST("initConfigPage: renderAll done");
     setStatus("Профили и схема загружены.", "success");
   } catch (error) {
+    console.error("[initConfigPage: ERROR]", error?.stack || error);
     setStatus(error.message || "Ошибка загрузки данных", "error");
   }
 
@@ -987,13 +1019,25 @@ async function initConfigPage() {
   }
 
   function renderAll() {
+    _ST("renderAll: start");
     ensureMigratedAndPersisted(getActiveRouter(), { save: true });
+    _ST("renderAll: 0/6 ensureMigrated");
     renderTabs();
+    _ST("renderAll: 1/6 renderTabs");
     renderProfileSelect();
+    _ST("renderAll: 2/6 renderProfileSelect");
     renderRouterList();
+    _ST("renderAll: 3/6 renderRouterList");
     renderForm();
+    _ST("renderAll: 4/6 renderForm");
     renderMeta();
+    _ST("renderAll: 5/6 renderMeta");
     refreshPreview();
+    _ST("renderAll: 6/6 done", {
+      routerListChildCount: routerListNode?.childElementCount,
+      formChildCount: formNode?.childElementCount,
+      previewLen: previewNode?.value?.length,
+    });
   }
 
   function renderTabs() {
