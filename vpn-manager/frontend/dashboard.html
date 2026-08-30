@@ -21,6 +21,15 @@
           <a href="index.html" class="tab-btn" role="button">
             Конфиг
           </a>
+          <button
+            type="button"
+            id="tab-settings-btn"
+            class="tab-btn tab-btn-icon"
+            aria-label="Открыть настройки"
+            title="Открыть настройки"
+          >
+            &#9881;
+          </button>
           <button type="button" id="logout-btn" class="tab-btn tab-btn-danger">
             Выйти
           </button>
@@ -69,8 +78,11 @@
           <a href="index.html" class="btn btn-primary">
             Настройка конфигурации
           </a>
-          <button type="button" id="vpn-actions-btn" class="btn btn-secondary">
-            VPN действия
+          <button type="button" id="vpn-sync-btn" class="btn btn-secondary">
+            🔄 VPN Sync (роутеры → chap-secrets)
+          </button>
+          <button type="button" id="vpn-restart-btn" class="btn btn-secondary">
+            🔁 Перезапустить VPN службы
           </button>
         </div>
 
@@ -108,5 +120,38 @@
     </div>
 
     <script defer src="app.js"></script>
+
+    <div id="password-modal" class="modal" style="display:none;">
+      <div class="modal-overlay" data-close-modal="1"></div>
+      <div class="modal-card panel">
+        <div class="modal-header">
+          <p class="eyebrow">Настройки</p>
+          <h2>Смена пароля admin</h2>
+          <p class="subtitle">Введите старый пароль и задайте новый (минимум 4 символа).</p>
+        </div>
+        <form id="password-form" class="form" novalidate onsubmit="return false;">
+          <label class="field">
+            <span class="field-label">Старый пароль</span>
+            <input id="old-password" class="field-input" type="password" required autocomplete="current-password" />
+            <span class="field-error" data-error-for="old-password"></span>
+          </label>
+          <label class="field">
+            <span class="field-label">Новый пароль</span>
+            <input id="new-password" class="field-input" type="password" required minlength="4" autocomplete="new-password" />
+            <span class="field-error" data-error-for="new-password"></span>
+          </label>
+          <label class="field">
+            <span class="field-label">Повторите новый пароль</span>
+            <input id="new-password-2" class="field-input" type="password" required minlength="4" autocomplete="new-password" />
+            <span class="field-error" data-error-for="new-password-2"></span>
+          </label>
+          <div id="password-status" class="status" style="display:none;"></div>
+          <div class="button-row">
+            <button type="button" id="password-cancel" class="btn btn-secondary" data-close-modal="1">Отмена</button>
+            <button type="submit" id="password-submit" class="btn btn-primary">Сменить пароль</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </body>
 </html>

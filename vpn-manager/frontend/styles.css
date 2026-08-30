@@ -694,3 +694,53 @@ h2 {
     font-size: 22px;
   }
 }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.78);
+  backdrop-filter: blur(3px);
+}
+
+.modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  padding: 28px;
+  z-index: 1;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  border-radius: 16px;
+}
+
+.modal-header {
+  margin-bottom: 20px;
+}
+
+#password-form .field {
+  margin-bottom: 14px;
+}
+
+#password-form .button-row {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.modal-header .eyebrow {
+  margin-bottom: 6px;
+}
+
+.modal-header h2 {
+  margin: 0 0 6px 0;
+}

@@ -23,6 +23,11 @@ class UserCreate(UserBase):
     password: str
 
 
+class UserPasswordChange(BaseModel):
+    old_password: str
+    new_password: str
+
+
 class UserLogin(BaseModel):
     username: str
     password: str

@@ -226,16 +226,57 @@ function initLoginPage() {
 async function initDashboardPage() {
   const logoutBtn = document.querySelector("#logout-btn");
   const refreshBtn = document.querySelector("#refresh-btn");
-  const vpnActionsBtn = document.querySelector("#vpn-actions-btn");
+  const vpnSyncBtn = document.querySelector("#vpn-sync-btn");
+  const vpnRestartBtn = document.querySelector("#vpn-restart-btn");
+  const settingsBtn = document.querySelector("#tab-settings-btn");
 
   logoutBtn.addEventListener("click", () => {
     redirectToLogin();
   });
 
   refreshBtn.addEventListener("click", loadDashboardData);
-  vpnActionsBtn.addEventListener("click", () => {
-    alert("VPN действия: функционал в разработке");
-  });
+
+  if (vpnSyncBtn) {
+    vpnSyncBtn.addEventListener("click", async () => {
+      vpnSyncBtn.disabled = true;
+      vpnSyncBtn.textContent = "⏳ Синхронизация...";
+      try {
+        const result = await apiFetch("/api/vpn/sync", { method: "POST" });
+        alert(
+          `✅ VPN Sync выполнен!\n\n` +
+          `➕ Добавлено: ${result.added}\n` +
+          `➖ Удалено: ${result.removed}\n` +
+          `⏭ Пропущено (уже существуют): ${result.skipped}\n`,
+        );
+      } catch (error) {
+        alert(`❌ Ошибка VPN Sync: ${error.message}`);
+      } finally {
+        vpnSyncBtn.disabled = false;
+        vpnSyncBtn.textContent = "🔄 VPN Sync (роутеры → chap-secrets)";
+      }
+    });
+  }
+
+  if (vpnRestartBtn) {
+    vpnRestartBtn.addEventListener("click", async () => {
+      if (!confirm("Перезапустить службы VPN (xl2tpd/accel-ppp) на сервере?")) return;
+      vpnRestartBtn.disabled = true;
+      vpnRestartBtn.textContent = "⏳ Перезапуск...";
+      try {
+        const result = await apiFetch("/api/vpn/restart", { method: "POST" });
+        alert(`✅ ${result.message || "Службы VPN перезапущены."}`);
+      } catch (error) {
+        alert(`❌ Ошибка перезапуска VPN: ${error.message}`);
+      } finally {
+        vpnRestartBtn.disabled = false;
+        vpnRestartBtn.textContent = "🔁 Перезапустить VPN службы";
+      }
+    });
+  }
+
+  if (settingsBtn) {
+    settingsBtn.addEventListener("click", openPasswordModal);
+  }
 
   await loadDashboardData();
   state.refreshInterval = setInterval(loadDashboardData, 10000);
@@ -353,6 +394,106 @@ function escapeHtml(str) {
   div.textContent = String(str ?? "");
   return div.innerHTML;
 }
+
+function openPasswordModal() {
+  const modal = document.querySelector("#password-modal");
+  if (!modal) return;
+  modal.style.display = "flex";
+
+  const statusNode = modal.querySelector("#password-status");
+  if (statusNode) {
+    statusNode.style.display = "none";
+    statusNode.className = "status";
+    statusNode.textContent = "";
+  }
+  for (const id of ["old-password", "new-password", "new-password-2"]) {
+    const el = modal.querySelector(`#${id}`);
+    if (el) el.value = "";
+    const err = modal.querySelector(`[data-error-for="${id}"]`);
+    if (err) err.textContent = "";
+  }
+  const firstInput = modal.querySelector("#old-password");
+  if (firstInput) setTimeout(() => firstInput.focus(), 50);
+}
+
+function closePasswordModal() {
+  const modal = document.querySelector("#password-modal");
+  if (!modal) return;
+  modal.style.display = "none";
+}
+
+document.addEventListener("click", (e) => {
+  const closeAttr = e.target.getAttribute && e.target.getAttribute("data-close-modal");
+  if (closeAttr === "1") closePasswordModal();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closePasswordModal();
+});
+
+document.addEventListener("submit", async (e) => {
+  const form = e.target;
+  if (!form || form.id !== "password-form") return;
+  e.preventDefault();
+
+  const oldPw = form.querySelector("#old-password")?.value || "";
+  const newPw = form.querySelector("#new-password")?.value || "";
+  const newPw2 = form.querySelector("#new-password-2")?.value || "";
+  const statusNode = form.querySelector("#password-status");
+  const submitBtn = form.querySelector("#password-submit");
+
+  for (const id of ["old-password", "new-password", "new-password-2"]) {
+    const err = form.querySelector(`[data-error-for="${id}"]`);
+    if (err) err.textContent = "";
+  }
+
+  let hasError = false;
+  if (!oldPw) {
+    const err = form.querySelector('[data-error-for="old-password"]');
+    if (err) err.textContent = "Введите старый пароль.";
+    hasError = true;
+  }
+  if (newPw.length < 4) {
+    const err = form.querySelector('[data-error-for="new-password"]');
+    if (err) err.textContent = "Минимум 4 символа.";
+    hasError = true;
+  }
+  if (newPw !== newPw2) {
+    const err = form.querySelector('[data-error-for="new-password-2"]');
+    if (err) err.textContent = "Пароли не совпадают.";
+    hasError = true;
+  }
+  if (hasError) return;
+
+  if (submitBtn) submitBtn.disabled = true;
+  if (statusNode) {
+    statusNode.style.display = "block";
+    statusNode.className = "status status-loading";
+    statusNode.textContent = "Смена пароля...";
+  }
+
+  try {
+    const result = await apiFetch("/api/auth/me/password", {
+      method: "PUT",
+      body: JSON.stringify({ old_password: oldPw, new_password: newPw }),
+    });
+    if (statusNode) {
+      statusNode.className = "status status-success";
+      statusNode.textContent = result?.message || "Пароль успешно изменён.";
+    }
+    setTimeout(() => {
+      closePasswordModal();
+      alert("✅ Пароль успешно изменён! Запомните новый пароль.");
+    }, 800);
+  } catch (error) {
+    if (statusNode) {
+      statusNode.className = "status status-error";
+      statusNode.textContent = error.message || "Ошибка смены пароля";
+    }
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+});
 
 async function initConfigPage() {
   const logoutBtn = document.querySelector("#logout-btn");

@@ -65,7 +65,7 @@ app.include_router(profiles_router)
 app.include_router(routers_api_router)
 app.include_router(monitoring_router)
 app.include_router(configs_router)
-app.include_router(vpn_router, prefix="/api/vpn", tags=["VPN Management"])
+app.include_router(vpn_router)
 
 def _resolve_frontend_dir() -> Path:
     candidates = []

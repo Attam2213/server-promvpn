@@ -8,6 +8,8 @@ from ..models import Router
 
 
 CHAP_SECRETS_PATH = "/etc/ppp/chap-secrets"
+ACCEL_PPP_SECRETS_PATH = "/etc/accel-ppp/conf/chap-secrets"
+ACCEL_PPP_CONFIG_PATH = "/etc/accel-ppp/accel-ppp.conf"
 
 
 class VpnManager:
@@ -21,6 +23,13 @@ class VpnManager:
         )
         self._fallback_path = os.path.abspath(self._fallback_path)
         self._detect_storage_mode()
+        self._sstp_available = self._detect_sstp()
+
+    def _detect_sstp(self) -> bool:
+        return (
+            shutil.which("accel-pppd") is not None
+            or os.path.exists(ACCEL_PPP_CONFIG_PATH)
+        )
 
     def _detect_storage_mode(self):
         if os.name == "nt":
@@ -87,9 +96,13 @@ class VpnManager:
     def add_user(self, username: str, password: str, ip_address: str = "*") -> bool:
         if not username or not password:
             return False
+        added_chap = False
         if self._use_fallback:
-            return self._add_user_fallback(username, password, ip_address)
-        return self._add_user_chap(username, password, ip_address)
+            added_chap = self._add_user_fallback(username, password, ip_address)
+        else:
+            added_chap = self._add_user_chap(username, password, ip_address)
+        self._add_user_sstp(username, password, ip_address)
+        return added_chap
 
     def _add_user_chap(self, username: str, password: str, ip_address: str) -> bool:
         try:
@@ -98,6 +111,28 @@ class VpnManager:
                 if user["username"] == username:
                     return False
             with open(CHAP_SECRETS_PATH, "a", encoding="utf-8") as f:
+                f.write(f"\n{username}\t*\t{password}\t{ip_address}\n")
+            return True
+        except Exception:
+            return False
+
+    def _add_user_sstp(self, username: str, password: str, ip_address: str) -> bool:
+        if not self._sstp_available:
+            return False
+        try:
+            secrets_dir = os.path.dirname(ACCEL_PPP_SECRETS_PATH)
+            if not os.path.exists(secrets_dir):
+                os.makedirs(secrets_dir, exist_ok=True)
+            existing = set()
+            if os.path.exists(ACCEL_PPP_SECRETS_PATH):
+                with open(ACCEL_PPP_SECRETS_PATH, "r", encoding="utf-8") as f:
+                    for line in f:
+                        u = self._parse_chap_line(line)
+                        if u:
+                            existing.add(u["username"])
+            if username in existing:
+                return False
+            with open(ACCEL_PPP_SECRETS_PATH, "a", encoding="utf-8") as f:
                 f.write(f"\n{username}\t*\t{password}\t{ip_address}\n")
             return True
         except Exception:
@@ -124,9 +159,13 @@ class VpnManager:
     def remove_user(self, username: str) -> bool:
         if not username:
             return False
+        removed = False
         if self._use_fallback:
-            return self._remove_user_fallback(username)
-        return self._remove_user_chap(username)
+            removed = self._remove_user_fallback(username)
+        else:
+            removed = self._remove_user_chap(username)
+        removed_sstp = self._remove_user_sstp(username)
+        return removed or removed_sstp
 
     def _remove_user_chap(self, username: str) -> bool:
         try:
@@ -150,6 +189,28 @@ class VpnManager:
         except Exception:
             return False
 
+    def _remove_user_sstp(self, username: str) -> bool:
+        if not self._sstp_available or not os.path.exists(ACCEL_PPP_SECRETS_PATH):
+            return False
+        try:
+            with open(ACCEL_PPP_SECRETS_PATH, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            found = False
+            new_lines = []
+            for line in lines:
+                user = self._parse_chap_line(line)
+                if user and user["username"] == username:
+                    found = True
+                    continue
+                new_lines.append(line)
+            if not found:
+                return False
+            with open(ACCEL_PPP_SECRETS_PATH, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            return True
+        except Exception:
+            return False
+
     def _remove_user_fallback(self, username: str) -> bool:
         try:
             users = self._list_users_fallback()
@@ -167,27 +228,33 @@ class VpnManager:
     def restart_services(self) -> bool:
         if self._use_fallback:
             return True
-        services = ["xl2tpd", "accel-ppp", "pppd"]
-        all_ok = False
+        services = ["xl2tpd", "accel-ppp", "ipsec", "strongswan"]
+        restarted_any = False
         for svc in services:
             if not shutil.which("systemctl"):
                 continue
             try:
-                result = subprocess.run(
+                is_active = subprocess.run(
                     ["systemctl", "is-active", "--quiet", svc],
                     capture_output=True,
                 )
-                if result.returncode != 0:
-                    continue
-                subprocess.run(
-                    ["systemctl", "restart", svc],
+                exists = subprocess.run(
+                    ["systemctl", "list-unit-files", "--full", "--no-legend"],
                     capture_output=True,
+                    text=True,
                     check=False,
                 )
-                all_ok = True
+                is_exists = f"{svc}.service" in (exists.stdout or "")
+                if is_active.returncode == 0 or is_exists:
+                    subprocess.run(
+                        ["systemctl", "restart", svc],
+                        capture_output=True,
+                        check=False,
+                    )
+                    restarted_any = True
             except Exception:
                 continue
-        return all_ok or True
+        return restarted_any or True
 
     def sync_routers_to_vpn(self, db_session) -> dict:
         result = {"added": 0, "removed": 0, "skipped": 0}
@@ -202,6 +269,24 @@ class VpnManager:
                 db_users[l2tp_user] = {
                     "username": l2tp_user,
                     "password": l2tp_password,
+                    "ip_address": ip_address,
+                }
+            sstp_user = values.get("sstpUser")
+            sstp_password = values.get("sstpPassword")
+            if sstp_user and sstp_password:
+                ip_address = values.get("sstpIpAddress", "*")
+                db_users[sstp_user] = {
+                    "username": sstp_user,
+                    "password": sstp_password,
+                    "ip_address": ip_address,
+                }
+            default_user = values.get("pppoeUsername")
+            default_pw = values.get("pppoePassword")
+            if default_user and default_pw:
+                ip_address = values.get("l2tpIpAddress", "*")
+                db_users[default_user] = {
+                    "username": default_user,
+                    "password": default_pw,
                     "ip_address": ip_address,
                 }
         existing_users = self.list_users()
