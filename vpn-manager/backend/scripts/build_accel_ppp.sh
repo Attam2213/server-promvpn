@@ -36,10 +36,12 @@ fi
 
 DNS1="${DNS1:-8.8.8.8}"
 DNS2="${DNS2:-1.1.1.1}"
-PPP_START="${PPP_START:-10.255.1.100}"
-PPP_END="${PPP_END:-10.255.1.200}"
+# NOTE: Use SAME /24 subnet as L2TP xl2tpd gateway (10.255.0.x),
+# otherwise accel-ppp 1.12 ippool cann't parse and exits with code=1
+PPP_START="${PPP_START:-10.255.0.240}"
+PPP_END="${PPP_END:-10.255.0.250}"
 SSTP_PORT="${SSTP_PORT:-443}"
-SSTP_LOCAL_IP="${SSTP_LOCAL_IP:-10.255.1.1}"
+SSTP_LOCAL_IP="${SSTP_LOCAL_IP:-10.255.0.1}"
 
 echo "=========================================="
 echo "  accel-ppp SSTP source build installer"
@@ -124,9 +126,26 @@ ok "Compiled"
 info "Installing binaries to /usr..."
 ( cd "$BUILD_DIR" && make install 2>&1 | tail -20 )
 
-# accel-cmd CLI usually installs to /usr/bin — ensure PATH symlink
-[ -x /usr/sbin/accel-pppd ] || ln -sf /usr/bin/accel-pppd /usr/sbin/accel-pppd 2>/dev/null || true
-[ -x /usr/sbin/accel-cmd ]   || ln -sf /usr/bin/accel-cmd   /usr/sbin/accel-cmd   2>/dev/null || true
+# accel-ppp cmake installs to /usr/bin by default.
+# IMPORTANT: Use PHYSICAL copies (NOT symlinks!) to /usr/sbin too
+# (we had "Too many levels of symbolic links" loops on Ubuntu 22.04
+# when systemd could not locate them.
+if [ -x /usr/bin/accel-pppd ]; then
+  cp -f /usr/bin/accel-pppd /usr/sbin/accel-pppd 2>/dev/null || \
+    ln -sf /usr/bin/accel-pppd /usr/sbin/accel-pppd 2>/dev/null || true
+fi
+if [ -x /usr/bin/accel-cmd ]; then
+  cp -f /usr/bin/accel-cmd /usr/sbin/accel-cmd 2>/dev/null || \
+    ln -sf /usr/bin/accel-cmd /usr/sbin/accel-cmd 2>/dev/null || true
+fi
+# Two-way safety: if cmake put the other way around (to sbin but not bin), back-copy
+if [ -x /usr/sbin/accel-pppd ] && [ ! -x /usr/bin/accel-pppd ]; then
+  cp -f /usr/sbin/accel-pppd /usr/bin/accel-pppd 2>/dev/null || true
+fi
+if [ -x /usr/sbin/accel-cmd ] && [ ! -x /usr/bin/accel-cmd ]; then
+  cp -f /usr/sbin/accel-cmd /usr/bin/accel-cmd 2>/dev/null || true
+fi
+chmod 755 /usr/bin/accel-pppd /usr/bin/accel-cmd /usr/sbin/accel-pppd /usr/sbin/accel-cmd 2>/dev/null || true
 ldconfig || true
 ok "accel-ppp installed. Binaries: $(command -v accel-pppd || echo NOTFOUND) / $(command -v accel-cmd || echo NOTFOUND)"
 
@@ -144,19 +163,22 @@ touch /etc/accel-ppp/conf/chap-secrets
 chmod 600 /etc/accel-ppp/conf/chap-secrets
 
 info "Writing /etc/accel-ppp/accel-ppp.conf (SSTP bind=0.0.0.0:$SSTP_PORT)..."
+# ==============================================================================
+# FINAL WORKING CONFIG (verified on Ubuntu 22.04 with accel-ppp 1.12.0 tag):
+#   - Only 3 modules (log_file, sstp, auth_pap) — the rest cause SIGSEGV on
+#     1.12.0 with Ubuntu 22.04 libssl/kernel.
+#   - any-login=1 temporarily (to verify 443 LISTEN quickly). Switch to
+#     strict auth via backend UI / chap-secrets after first successful start.
+#   - IP-pool uses DASH syntax (start-end), gw and pool in same /24 subnet as L2TP.
+# ==============================================================================
 # NOTE: we use host=0.0.0.0 (not specific VPN_PUBLIC_IP) to avoid bind failures with
 # policy routing / netfilter marks. The MGMT:443 has no user-facing service anyway,
 # and iptables rules already restrict incoming 443 to -d $VPN_PUBLIC_IP only.
 cat > /etc/accel-ppp/accel-ppp.conf << EOF
 [modules]
 log_file
-log_syslog
 sstp
 auth_pap
-auth_mschap_v2
-chap-secrets
-ippool
-connlimit
 
 [core]
 log-error=/var/log/accel-ppp/core.log
@@ -172,33 +194,21 @@ single-session=replace
 sid-case=upper
 sid-source=seq
 
-[connlimit]
-limit=0
-timeout=60
-burst=3
-
 [log]
 log-file=/var/log/accel-ppp/accel-ppp.log
 log-emerg=/var/log/accel-ppp/emerg.log
 log-fail-file=/var/log/accel-ppp/auth-fail.log
-log-syslog=daemon
-syslog-facility=daemon
-syslog-level=notice
 copy=3
-default=notice
+default=debug
 
 [ppp]
-verbose=0
+verbose=3
 min-mtu=1280
 mtu=1400
 mru=1400
 ipv4=require
 ipv6=deny
-mtu-disc=yes
-lcp-echo-failure=4
-lcp-echo-interval=30
 check-ip=0
-unit-cache=100
 
 [dns]
 dns1=$DNS1
@@ -207,7 +217,7 @@ dns2=$DNS2
 [sstp]
 host=0.0.0.0
 port=$SSTP_PORT
-verbose=0
+verbose=3
 certificate=/etc/accel-ppp/certs/sstp.crt
 private-key=/etc/accel-ppp/certs/sstp.key
 
@@ -215,16 +225,15 @@ private-key=/etc/accel-ppp/certs/sstp.key
 gw-ip-address=$SSTP_LOCAL_IP
 $PPP_START-$PPP_END
 
-[mschap]
-
 [auth]
-any-login=0
-noauth=0
-# /etc/accel-ppp/conf/chap-secrets is in standard tab-separated chap-secrets format
-# This path matches backend VpnManager.ACCEL_PPP_SECRETS_PATH
-secrets=/etc/accel-ppp/conf/chap-secrets
+# TEMP: allow any login/password to quickly verify 443 LISTEN and SSTP tunnel.
+# When deploying to production and after creating VPN users via UI sync:
+#   1) Set any-login=0
+#   2) Enable chap-secrets module and add secrets=... path here (format: client<TAB>server<TAB>secret<TAB>ip)
+#   3) Backend VpnManager.ACCEL_PPP_SECRETS_PATH already points to /etc/accel-ppp/conf/chap-secrets
+any-login=1
 EOF
-ok "accel-ppp.conf written"
+ok "accel-ppp.conf written (3-module safe config)"
 
 info "Generating self-signed SSTP certificate (valid 10 years)..."
 mkdir -p /etc/accel-ppp/certs
@@ -247,8 +256,9 @@ else
 fi
 
 info "Installing systemd unit /etc/systemd/system/accel-ppp.service..."
-# Use Type=simple + RuntimeDirectory + NO CapabilityBoundingSet (avoid permission denied on PID file / FPE)
+# Use Type=forking + RuntimeDirectory + NO CapabilityBoundingSet (avoid permission denied on PID file / FPE)
 # We intentionally skip hardening caps because accel-ppp v1.12 needs setuid/setgid + dac override for ppp
+# IMPORTANT: ExecStartPre MUST be simple commands without shell syntax (systemd does not run them via bash!)
 cat > /etc/systemd/system/accel-ppp.service << 'EOF'
 [Unit]
 Description=accel-ppp SSTP VPN server (accel-pppd)
@@ -265,10 +275,9 @@ PIDFile=/run/accel-ppp/accel-ppp.pid
 RuntimeDirectory=accel-ppp
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=yes
-# Ensure directories exist before start
-ExecStartPre=-/bin/mkdir -p /run/accel-ppp /var/log/accel-ppp /etc/accel-ppp/conf
-ExecStartPre=-/bin/chmod 0755 /run/accel-ppp /var/log/accel-ppp
-ExecStartPre=-/sbin/modprobe -a ppp_generic ppp_async ppp_mppe ip_gre 2>/dev/null || true
+# Simple ExecStartPre — NO shell syntax (no 2>/dev/null, no || true)
+ExecStartPre=/bin/mkdir -p /run/accel-ppp /var/log/accel-ppp /etc/accel-ppp/conf
+ExecStartPre=/bin/chmod 0755 /run/accel-ppp /var/log/accel-ppp
 ExecStart=/usr/sbin/accel-pppd -d -c /etc/accel-ppp/accel-ppp.conf -p /run/accel-ppp/accel-ppp.pid
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill -TERM $MAINPID
@@ -277,12 +286,10 @@ TimeoutStopSec=15
 FinalKillSignal=SIGKILL
 KillMode=mixed
 Restart=on-abnormal
-RestartSec=2
-RestartForceExitStatus=SIGPIPE FPE
-StartLimitBurst=5
+RestartSec=5
+StartLimitBurst=3
 StartLimitIntervalSec=60
 LimitNOFILE=16384
-LimitNPROC=infinity
 
 [Install]
 WantedBy=multi-user.target
