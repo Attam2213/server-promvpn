@@ -1732,3 +1732,4 @@ async function initConfigPage() {
   } else {
     autoInitPage();
   }
+}
