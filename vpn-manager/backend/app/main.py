@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 try:
     from fastapi.staticfiles import StaticFiles
@@ -51,6 +51,26 @@ app = FastAPI(
     description="Менеджер VPN и конфигураций MikroTik (L2TP + SSTP)",
     version="1.0.1",
 )
+
+@app.middleware("http")
+async def add_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if isinstance(response, Response):
+        path = request.url.path.lower()
+        query = request.url.query or ""
+        has_cache_key = "v=" in query
+        if path.endswith(".html") or (not any(path.endswith(ext) for ext in (".js",".css",".png",".jpg",".jpeg",".gif",".svg",".ico",".woff",".woff2",".ttf")) and path.startswith(("/login","/dashboard","/config","/"))):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        elif path.endswith((".js", ".css")):
+            if has_cache_key:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+    return response
 
 app.add_middleware(
     CORSMiddleware,
