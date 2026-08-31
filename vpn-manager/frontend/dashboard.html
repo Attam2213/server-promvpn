@@ -7,7 +7,30 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>VPN/VDS Manager - Дашборд</title>
-    <link rel="stylesheet" href="styles.css?v=20260831" />
+    <script>
+      (function(){
+        var FORCE = "20260831b";
+        try {
+          var u = new URL(window.location.href);
+          if (u.searchParams.get("v") !== FORCE) {
+            u.searchParams.set("v", FORCE);
+            u.searchParams.delete("debug");
+            if (window.location.search !== u.search) {
+              window.location.replace(u.toString());
+              return;
+            }
+          }
+        } catch(e){
+          var loc = window.location;
+          var q = loc.search;
+          if (q.indexOf("v=" + FORCE) === -1) {
+            window.location.replace(loc.pathname + "?v=" + FORCE + loc.hash);
+            return;
+          }
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="styles.css?v=20260831b" />
   </head>
   <body>
     <div class="layout">
@@ -207,7 +230,7 @@
       </section>
     </div>
 
-    <script defer src="app.js?v=20260831"></script>
+    <script defer src="app.js?v=20260831b"></script>
 
     <!-- Password change modal -->
     <div id="password-modal" class="modal" style="display:none;">

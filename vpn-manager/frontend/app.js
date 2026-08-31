@@ -207,15 +207,13 @@ async function initPage() {
 function initLoginPage() {
   const form = document.querySelector("#login-form");
   const statusNode = document.querySelector("#login-status");
+  const loginBtn = document.querySelector("#login-btn");
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-
+  async function doLogin() {
     const username = document.querySelector("#username").value.trim();
     const password = document.querySelector("#password").value;
     const usernameError = document.querySelector('[data-error-for="username"]');
     const passwordError = document.querySelector('[data-error-for="password"]');
-    const loginBtn = document.querySelector("#login-btn");
 
     usernameError.textContent = "";
     passwordError.textContent = "";
@@ -264,7 +262,31 @@ function initLoginPage() {
       statusNode.className = "status status-error";
       loginBtn.disabled = false;
     }
+  }
+
+  window._loginSubmit = doLogin;
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    doLogin();
   });
+
+  if (loginBtn) {
+    loginBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      doLogin();
+    });
+  }
+
+  const pwInput = document.querySelector("#password");
+  if (pwInput) {
+    pwInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        doLogin();
+      }
+    });
+  }
 }
 
 async function initDashboardPage() {
@@ -1792,6 +1814,10 @@ async function initConfigPage() {
     }
     window._vpnAppInitRan = true;
 
+    if (document.getElementById("login-form") && document.getElementById("username")) {
+      initLoginPage();
+      return;
+    }
     if (document.getElementById("config-form")) {
       initConfigPage();
       return;
