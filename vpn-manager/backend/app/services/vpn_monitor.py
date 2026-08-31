@@ -125,10 +125,10 @@ class VpnMonitor:
                     "ike_peers": [],
                 }
             for k, v in data.items():
-                if v is not None and not merged[k]:
-                    merged[k] = v
+                if v is not None and not merged[key].get(k):
+                    merged[key][k] = v
                 elif isinstance(v, int) and k in ("bytes_in", "bytes_out"):
-                    merged[k] = max(merged.get(k, 0) or 0, v or 0)
+                    merged[key][k] = max(merged[key].get(k, 0) or 0, v or 0)
 
         for ppp in ppp_sessions:
             iface = ppp.get("interface", "")
