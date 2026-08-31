@@ -570,19 +570,39 @@ class VpnMonitor:
             )
             if result.returncode != 0 or not result.stdout:
                 return sessions
-            lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+            raw_lines = [l.rstrip() for l in result.stdout.splitlines()]
+            lines = []
+            for l in raw_lines:
+                stripped = l.strip()
+                if not stripped:
+                    continue
+                if re.fullmatch(r"[\-+| ]+", stripped):
+                    continue
+                lines.append(stripped)
             if len(lines) <= 1:
                 return sessions
-            headers = [h.lower() for h in re.split(r"\s{2,}|\t", lines[0])]
+
+            def _split_row(s):
+                if "|" in s:
+                    return [c.strip() for c in s.split("|")]
+                return re.split(r"\s{2,}|\t", s)
+
+            headers_raw = _split_row(lines[0])
+            headers = []
+            for h in headers_raw:
+                hl = h.lower()
+                if hl == "ifname":
+                    hl = "interface"
+                headers.append(hl)
             idx_iface = headers.index("interface") if "interface" in headers else None
             idx_user = headers.index("username") if "username" in headers else -1
             idx_ip = headers.index("ip") if "ip" in headers else (headers.index("calling-sid") if "calling-sid" in headers else None)
             idx_time = headers.index("uptime") if "uptime" in headers else (headers.index("time") if "time" in headers else None)
-            idx_rx = headers.index("rx-bytes") if "rx-bytes" in headers else -1
-            idx_tx = headers.index("tx-bytes") if "tx-bytes" in headers else -1
-            idx_proto = headers.index("proto") if "proto" in headers else -1
+            idx_rx = headers.index("rx-bytes") if "rx-bytes" in headers else (headers.index("rx") if "rx" in headers else -1)
+            idx_tx = headers.index("tx-bytes") if "tx-bytes" in headers else (headers.index("tx") if "tx" in headers else -1)
+            idx_proto = headers.index("proto") if "proto" in headers else (headers.index("type") if "type" in headers else -1)
             for line in lines[1:]:
-                cols = re.split(r"\s{2,}|\t", line)
+                cols = _split_row(line)
                 sess = {
                     "interface": cols[idx_iface].strip() if idx_iface is not None and idx_iface < len(cols) else "",
                     "username": cols[idx_user].strip() if 0 <= idx_user < len(cols) else "",
@@ -610,7 +630,8 @@ class VpnMonitor:
                         sess["bytes_out"] = int(self._to_bytes(cols[idx_tx].strip()))
                     except Exception:
                         pass
-                sessions.append(sess)
+                if sess["interface"] or sess["username"] or sess["ip_address"]:
+                    sessions.append(sess)
         except Exception:
             pass
         return sessions
