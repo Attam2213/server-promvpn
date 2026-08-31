@@ -347,11 +347,11 @@ private-key=/etc/accel-ppp/certs/sstp.key
 gw-ip-address=$SSTP_LOCAL_IP
 $SSTP_POOL_START-$SSTP_POOL_END
 
-[ctrl]
+[cli]
 # IMPORTANT: localhost only — never expose ctrl socket to public internet.
 # Usage: accel-cmd -H 127.0.0.1 -P 2001 show sessions
-type=tcp
-host=127.0.0.1:2001
+verbose=0
+tcp=127.0.0.1:2001
 
 [auth]
 # Strict auth using shared chap-secrets with xl2tpd (same users for L2TP and SSTP).

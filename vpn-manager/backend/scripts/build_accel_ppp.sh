@@ -228,11 +228,11 @@ private-key=/etc/accel-ppp/certs/sstp.key
 gw-ip-address=$SSTP_LOCAL_IP
 $PPP_START-$PPP_END
 
-[ctrl]
+[cli]
 # IMPORTANT: listen localhost ONLY — NEVER expose ctrl socket to public internet.
 # accel-cmd connects via:  accel-cmd -H 127.0.0.1 -P 2001 show sessions
-type=tcp
-host=127.0.0.1:2001
+verbose=0
+tcp=127.0.0.1:2001
 
 [auth]
 # Strict auth using SAME chap-secrets file as xl2tpd (L2TP users).
@@ -241,7 +241,7 @@ host=127.0.0.1:2001
 any-login=0
 secrets=/etc/accel-ppp/conf/chap-secrets
 EOF
-ok "accel-ppp.conf written (4 modules: log_file + sstp + auth_pap + ctrl; strict auth secrets; ctrl 127.0.0.1:2001)"
+ok "accel-ppp.conf written (3 modules: log_file + sstp + auth_pap; strict auth secrets; cli tcp 127.0.0.1:2001)"
 
 info "Generating self-signed SSTP certificate (valid 10 years)..."
 mkdir -p /etc/accel-ppp/certs
