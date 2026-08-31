@@ -9,7 +9,7 @@
     <title>VPN/VDS Manager - Вход</title>
     <script>
       (function(){
-        var FORCE = "20260831b";
+        var FORCE = "20260831c";
         try {
           var u = new URL(window.location.href);
           if (u.searchParams.get("v") !== FORCE) {
@@ -30,14 +30,15 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="styles.css?v=20260831b" />
+    <link rel="stylesheet" href="styles.css?v=20260831c" />
   </head>
   <body>
     <div class="login-layout">
       <div class="login-card panel">
         <div class="login-header">
+          <div class="login-logo">🛡️</div>
           <p class="eyebrow">VPN/VDS Manager</p>
-          <h1>Вход в систему</h1>
+          <h1>Вход в <span class="title-accent">систему</span></h1>
           <p class="subtitle">Введите учетные данные для доступа к панели управления.</p>
         </div>
 
@@ -79,6 +80,6 @@
       </div>
     </div>
 
-    <script defer src="app.js?v=20260831b"></script>
+    <script defer src="app.js?v=20260831c"></script>
   </body>
 </html>

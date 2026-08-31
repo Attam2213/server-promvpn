@@ -56,6 +56,15 @@ var fieldTemplate;
 var routerItemTemplate;
 
 const SECTION_ORDER = ["Идентификация", "Wi-Fi", "WAN", "L2TP", "SSTP", "LAN", "Маршруты"];
+const SECTION_META = {
+  "Идентификация": ["🏷️", ""],
+  "Wi-Fi": ["📶", "section-wifi"],
+  "WAN": ["🌐", "section-wan"],
+  "L2TP": ["🛡️", "section-vpn"],
+  "SSTP": ["🔒", "section-vpn"],
+  "LAN": ["🖧", "section-lan"],
+  "Маршруты": ["🛤️", "section-routes"]
+};
 
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -1155,11 +1164,21 @@ async function initConfigPage() {
       if (sectionFields.length === 0) continue;
 
       const section = document.createElement("section");
-      section.className = "section";
+      const meta = SECTION_META[sectionName] || ["", ""];
+      section.className = "section " + meta[1];
+      section.className = section.className.trim();
 
       const title = document.createElement("h3");
       title.className = "section-title";
-      title.textContent = sectionName;
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "section-icon";
+      iconSpan.textContent = meta[0] || "";
+      if (meta[0]) {
+        title.appendChild(iconSpan);
+        title.appendChild(document.createTextNode(" " + sectionName));
+      } else {
+        title.textContent = sectionName;
+      }
       section.appendChild(title);
 
       const grid = document.createElement("div");
