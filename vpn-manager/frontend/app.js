@@ -31,29 +31,29 @@ const state = {
   refreshInterval: null,
 };
 
-let logoutBtn;
-let configTabNode;
-let settingsTabNode;
-let configTabButton;
-let settingsTabButton;
-let statusNode;
-let formNode;
-let previewNode;
-let formTitleNode;
-let profileSelectNode;
-let routerListNode;
-let resetButton;
-let downloadButton;
-let downloadPreviewButton;
-let downloadAllButton;
-let addRouterButton;
-let duplicateRouterButton;
-let removeRouterButton;
-let newProfileButton;
-let saveProfileButton;
-let deleteProfileButton;
-let fieldTemplate;
-let routerItemTemplate;
+var logoutBtn;
+var configTabNode;
+var settingsTabNode;
+var configTabButton;
+var settingsTabButton;
+var statusNode;
+var formNode;
+var previewNode;
+var formTitleNode;
+var profileSelectNode;
+var routerListNode;
+var resetButton;
+var downloadButton;
+var downloadPreviewButton;
+var downloadAllButton;
+var addRouterButton;
+var duplicateRouterButton;
+var removeRouterButton;
+var newProfileButton;
+var saveProfileButton;
+var deleteProfileButton;
+var fieldTemplate;
+var routerItemTemplate;
 
 const SECTION_ORDER = ["Идентификация", "Wi-Fi", "WAN", "L2TP", "SSTP", "LAN", "Маршруты"];
 
@@ -1806,6 +1806,7 @@ async function initConfigPage() {
       });
     }
   }
+}
 
   function autoInitPage() {
     if (window._vpnAppInitRan) {
@@ -1832,4 +1833,3 @@ async function initConfigPage() {
   } else {
     autoInitPage();
   }
-}
