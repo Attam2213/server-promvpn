@@ -973,6 +973,91 @@ select.field-input,
 .section-lan { border-top: 2px solid rgba(34,197,94,0.22); }
 .section-wifi { border-top: 2px solid rgba(236,72,153,0.22); }
 
+.section-dashboard {
+  border-top: 2px solid rgba(74,163,255,0.28);
+  background: linear-gradient(180deg, rgba(74,163,255,0.06) 0%, transparent 22%), linear-gradient(180deg, rgba(26,38,62,0.95), rgba(22,34,56,0.96));
+}
+.section-sessions {
+  border-top: 2px solid rgba(139,92,246,0.28);
+}
+.section-users {
+  border-top: 2px solid rgba(34,197,94,0.28);
+}
+
+/* ===== COLLAPSIBLE ACCORDION ===== */
+.collapsible {
+  transition: box-shadow var(--t) ease;
+}
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 22px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  transition: background var(--t) ease;
+}
+.collapsible-header:hover {
+  background: rgba(74,163,255,0.05);
+}
+.section .section-title {
+  padding: 18px 22px 14px 22px;
+  user-select: none;
+}
+.collapsible-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-1);
+  flex: 1 1 auto;
+}
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  color: var(--text-3);
+  background: rgba(255,255,255,0.04);
+  transition: transform var(--t) ease, background var(--t-fast) ease, color var(--t-fast) ease;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.collapsible-header:hover .chevron,
+.section-title:hover .chevron {
+  background: rgba(74,163,255,0.15);
+  color: #9cc5ff;
+}
+.collapsible:not(.is-open) > .collapsible-header .chevron,
+.collapsible:not(.is-open) > .section-title .chevron {
+  transform: rotate(-90deg);
+}
+.collapsible-body {
+  max-height: 5000px;
+  overflow: hidden;
+  opacity: 1;
+  transition: max-height var(--t-slow) cubic-bezier(0.22, 1, 0.36, 1),
+              opacity var(--t) ease,
+              padding var(--t) ease;
+  padding: 0 22px 22px 22px;
+}
+.collapsible:not(.is-open) > .collapsible-body {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  pointer-events: none;
+}
+.section.collapsible:not(.is-open) {
+  padding-bottom: 0;
+}
+.section.collapsible > .section-title .section-icon {
+  margin-right: 0;
+}
+
 /* ===== MODAL ===== */
 .modal {
   position: fixed;

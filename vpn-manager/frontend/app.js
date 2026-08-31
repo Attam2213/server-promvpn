@@ -66,6 +66,21 @@ const SECTION_META = {
   "Маршруты": ["🛤️", "section-routes"]
 };
 
+function initCollapsibles(root) {
+  const scope = root || document;
+  scope.querySelectorAll(".collapsible").forEach((el) => {
+    if (el.dataset.collapsibleInit === "1") return;
+    el.dataset.collapsibleInit = "1";
+    const header = el.querySelector(":scope > .collapsible-header, :scope > .section-title");
+    if (!header) return;
+    header.style.cursor = "pointer";
+    header.addEventListener("click", (ev) => {
+      if (ev.target.closest("input, button, select, textarea, a, label")) return;
+      el.classList.toggle("is-open");
+    });
+  });
+}
+
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -486,6 +501,7 @@ async function initDashboardPage() {
     }
   });
 
+  initCollapsibles(document);
   await loadDashboardData();
   state.refreshInterval = setInterval(loadDashboardData, 10000);
 }
@@ -1009,6 +1025,7 @@ async function initConfigPage() {
     wireActions();
     _ST("initConfigPage: wireActions done");
     renderAll();
+    initCollapsibles(formNode);
     _ST("initConfigPage: renderAll done");
     setStatus("Профили и схема загружены.", "success");
   } catch (error) {
@@ -1067,6 +1084,7 @@ async function initConfigPage() {
     renderRouterList();
     _ST("renderAll: 3/6 renderRouterList");
     renderForm();
+    initCollapsibles(formNode);
     _ST("renderAll: 4/6 renderForm");
     renderMeta();
     _ST("renderAll: 5/6 renderMeta");
@@ -1165,25 +1183,40 @@ async function initConfigPage() {
 
       const section = document.createElement("section");
       const meta = SECTION_META[sectionName] || ["", ""];
-      section.className = "section " + meta[1];
-      section.className = section.className.trim();
+      section.className = ("section collapsible is-open " + meta[1]).trim();
 
       const title = document.createElement("h3");
       title.className = "section-title";
+      title.style.display = "flex";
+      title.style.alignItems = "center";
+      title.style.justifyContent = "space-between";
+      const leftWrap = document.createElement("span");
+      leftWrap.style.display = "inline-flex";
+      leftWrap.style.alignItems = "center";
+      leftWrap.style.gap = "10px";
       const iconSpan = document.createElement("span");
       iconSpan.className = "section-icon";
       iconSpan.textContent = meta[0] || "";
       if (meta[0]) {
-        title.appendChild(iconSpan);
-        title.appendChild(document.createTextNode(" " + sectionName));
+        leftWrap.appendChild(iconSpan);
+        leftWrap.appendChild(document.createTextNode(" " + sectionName));
       } else {
-        title.textContent = sectionName;
+        leftWrap.textContent = sectionName;
       }
+      title.appendChild(leftWrap);
+      const chevron = document.createElement("span");
+      chevron.className = "chevron";
+      chevron.textContent = "▼";
+      title.appendChild(chevron);
       section.appendChild(title);
+
+      const body = document.createElement("div");
+      body.className = "collapsible-body";
+      section.appendChild(body);
 
       const grid = document.createElement("div");
       grid.className = "section-grid";
-      section.appendChild(grid);
+      body.appendChild(grid);
       formNode.appendChild(section);
 
       for (const field of sectionFields) {

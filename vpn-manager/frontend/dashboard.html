@@ -9,7 +9,7 @@
     <title>VPN/VDS Manager - Дашборд</title>
     <script>
       (function(){
-        var FORCE = "20260831c";
+        var FORCE = "20260831d";
         try {
           var u = new URL(window.location.href);
           if (u.searchParams.get("v") !== FORCE) {
@@ -30,7 +30,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="styles.css?v=20260831c" />
+    <link rel="stylesheet" href="styles.css?v=20260831d" />
   </head>
   <body>
     <div class="layout">
@@ -41,15 +41,6 @@
         </div>
 
         <div class="topbar-actions">
-          <button type="button" id="tab-dashboard-btn" class="tab-btn tab-btn-active" data-tab="dashboard">
-            Дашборд
-          </button>
-          <button type="button" id="tab-sessions-btn" class="tab-btn" data-tab="sessions">
-            Сессии VPN
-          </button>
-          <button type="button" id="tab-users-btn" class="tab-btn" data-tab="users">
-            VPN Пользователи
-          </button>
           <a href="index.html" class="tab-btn" role="button">
             Конфиг
           </a>
@@ -68,169 +59,188 @@
         </div>
       </header>
 
-      <!-- TAB: DASHBOARD -->
-      <section id="tab-dashboard" class="dashboard-panel tab-panel tab-panel-active">
-        <div class="stats-grid">
-          <div class="stat-card panel">
-            <div class="stat-icon stat-icon-total">▦</div>
-            <div class="stat-content">
-              <span class="stat-label">Всего роутеров</span>
-              <strong id="stat-total" class="stat-value">0</strong>
-              <p class="stat-meta" id="stat-profiles">Профилей: 0</p>
-            </div>
-          </div>
-
-          <div class="stat-card panel">
-            <div class="stat-icon stat-icon-online">●</div>
-            <div class="stat-content">
-              <span class="stat-label">Онлайн</span>
-              <strong id="stat-online" class="stat-value stat-value-success">0</strong>
-              <p class="stat-meta" id="stat-uptime">Uptime сервера: —</p>
-            </div>
-          </div>
-
-          <div class="stat-card panel">
-            <div class="stat-icon stat-icon-traffic">↯</div>
-            <div class="stat-content">
-              <span class="stat-label">Трафик всего</span>
-              <strong id="stat-traffic" class="stat-value">0 GB</strong>
-              <p class="stat-meta" id="stat-traffic-mb">≈ 0 MB</p>
-            </div>
-          </div>
-
-          <div class="stat-card panel">
-            <div class="stat-icon stat-icon-offline">○</div>
-            <div class="stat-content">
-              <span class="stat-label">Оффлайн</span>
-              <strong id="stat-offline" class="stat-value stat-value-danger">0</strong>
-              <p class="stat-meta" id="stat-sessions">Активных сессий: 0</p>
-            </div>
-          </div>
+      <!-- DASHBOARD (Collapsible) -->
+      <section id="tab-dashboard" class="panel collapsible section-dashboard is-open">
+        <div class="collapsible-header">
+          <span class="section-icon">📊</span>
+          <h2 class="collapsible-title">Обзор и роутеры</h2>
+          <span class="chevron">▼</span>
         </div>
+        <div class="collapsible-body">
+          <div class="stats-grid">
+            <div class="stat-card panel">
+              <div class="stat-icon stat-icon-total">▦</div>
+              <div class="stat-content">
+                <span class="stat-label">Всего роутеров</span>
+                <strong id="stat-total" class="stat-value">0</strong>
+                <p class="stat-meta" id="stat-profiles">Профилей: 0</p>
+              </div>
+            </div>
 
-        <div class="dashboard-actions">
-          <button type="button" id="refresh-btn" class="btn btn-secondary">
-            🔄 Обновить сейчас
-          </button>
-          <a href="index.html" class="btn btn-primary">
-            ⚙️ Настройка конфигурации
-          </a>
-          <button type="button" id="vpn-sync-btn" class="btn btn-secondary">
-            📤 VPN Sync (роутеры → chap-secrets)
-          </button>
-          <button type="button" id="vpn-restart-btn" class="btn btn-secondary">
-            🔁 Перезапустить VPN службы
-          </button>
-        </div>
+            <div class="stat-card panel">
+              <div class="stat-icon stat-icon-online">●</div>
+              <div class="stat-content">
+                <span class="stat-label">Онлайн</span>
+                <strong id="stat-online" class="stat-value stat-value-success">0</strong>
+                <p class="stat-meta" id="stat-uptime">Uptime сервера: —</p>
+              </div>
+            </div>
 
-        <div class="panel panel-table">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">Мониторинг роутеров</p>
-              <h2>Список роутеров</h2>
-              <p class="subtitle">
-                Автообновление каждые 10 секунд. Последнее обновление:
-                <span id="last-update">—</span>
-              </p>
+            <div class="stat-card panel">
+              <div class="stat-icon stat-icon-traffic">↯</div>
+              <div class="stat-content">
+                <span class="stat-label">Трафик всего</span>
+                <strong id="stat-traffic" class="stat-value">0 GB</strong>
+                <p class="stat-meta" id="stat-traffic-mb">≈ 0 MB</p>
+              </div>
+            </div>
+
+            <div class="stat-card panel">
+              <div class="stat-icon stat-icon-offline">○</div>
+              <div class="stat-content">
+                <span class="stat-label">Оффлайн</span>
+                <strong id="stat-offline" class="stat-value stat-value-danger">0</strong>
+                <p class="stat-meta" id="stat-sessions">Активных сессий: 0</p>
+              </div>
             </div>
           </div>
 
-          <div class="table-wrapper">
-            <table id="routers-table" class="routers-table">
-              <thead>
-                <tr>
-                  <th>Название</th>
-                  <th>VPN логин</th>
-                  <th>LAN подсеть</th>
-                  <th>Wi-Fi</th>
-                  <th>Статус</th>
-                  <th>Uptime</th>
-                  <th>Трафик</th>
-                  <th>Действия</th>
-                </tr>
-              </thead>
-              <tbody id="routers-tbody">
-                <tr>
-                  <td colspan="8" class="table-loading">Загрузка данных...</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="dashboard-actions">
+            <button type="button" id="refresh-btn" class="btn btn-secondary">
+              🔄 Обновить сейчас
+            </button>
+            <a href="index.html" class="btn btn-primary">
+              ⚙️ Настройка конфигурации
+            </a>
+            <button type="button" id="vpn-sync-btn" class="btn btn-secondary">
+              📤 VPN Sync (роутеры → chap-secrets)
+            </button>
+            <button type="button" id="vpn-restart-btn" class="btn btn-secondary">
+              🔁 Перезапустить VPN службы
+            </button>
+          </div>
+
+          <div class="panel panel-table">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Мониторинг роутеров</p>
+                <h3>Список роутеров</h3>
+                <p class="subtitle">
+                  Автообновление каждые 10 секунд. Последнее обновление:
+                  <span id="last-update">—</span>
+                </p>
+              </div>
+            </div>
+
+            <div class="table-wrapper">
+              <table id="routers-table" class="routers-table">
+                <thead>
+                  <tr>
+                    <th>Название</th>
+                    <th>VPN логин</th>
+                    <th>LAN подсеть</th>
+                    <th>Wi-Fi</th>
+                    <th>Статус</th>
+                    <th>Uptime</th>
+                    <th>Трафик</th>
+                    <th>Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="routers-tbody">
+                  <tr>
+                    <td colspan="8" class="table-loading">Загрузка данных...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- TAB: SESSIONS -->
-      <section id="tab-sessions" class="dashboard-panel tab-panel">
-        <div class="dashboard-actions">
-          <button type="button" id="refresh-sessions-btn" class="btn btn-secondary">🔄 Обновить сессии</button>
-          <p class="subtitle" style="margin-left:auto;">Сеансов показано: <strong id="sessions-count">0</strong></p>
+      <!-- SESSIONS (Collapsible) -->
+      <section id="tab-sessions" class="panel collapsible section-sessions is-open">
+        <div class="collapsible-header">
+          <span class="section-icon">🔗</span>
+          <h2 class="collapsible-title">Активные VPN сессии</h2>
+          <span class="chevron">▼</span>
         </div>
-        <div class="panel panel-table">
-          <div class="panel-header">
-            <p class="eyebrow">Мониторинг</p>
-            <h2>Активные VPN сессии</h2>
-            <p class="subtitle">Данные из xl2tpd-control / accel-cmd / ipsec status. Обновляются каждые 10 секунд.</p>
+        <div class="collapsible-body">
+          <div class="dashboard-actions">
+            <button type="button" id="refresh-sessions-btn" class="btn btn-secondary">🔄 Обновить сессии</button>
+            <p class="subtitle" style="margin-left:auto;">Сеансов показано: <strong id="sessions-count">0</strong></p>
           </div>
-          <div class="table-wrapper">
-            <table id="sessions-table" class="routers-table">
-              <thead>
-                <tr>
-                  <th>Роутер</th>
-                  <th>VPN логин</th>
-                  <th>Протокол</th>
-                  <th>Интерфейс</th>
-                  <th>IP клиента</th>
-                  <th>LAN</th>
-                  <th>Uptime</th>
-                  <th>Трафик</th>
-                </tr>
-              </thead>
-              <tbody id="sessions-tbody">
-                <tr><td colspan="8" class="table-loading">Загрузка сессий...</td></tr>
-              </tbody>
-            </table>
+          <div class="panel panel-table">
+            <div class="panel-header">
+              <p class="eyebrow">Мониторинг</p>
+              <p class="subtitle">Данные из xl2tpd-control / accel-cmd / ipsec status. Обновляются каждые 10 секунд.</p>
+            </div>
+            <div class="table-wrapper">
+              <table id="sessions-table" class="routers-table">
+                <thead>
+                  <tr>
+                    <th>Роутер</th>
+                    <th>VPN логин</th>
+                    <th>Протокол</th>
+                    <th>Интерфейс</th>
+                    <th>IP клиента</th>
+                    <th>LAN</th>
+                    <th>Uptime</th>
+                    <th>Трафик</th>
+                  </tr>
+                </thead>
+                <tbody id="sessions-tbody">
+                  <tr><td colspan="8" class="table-loading">Загрузка сессий...</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- TAB: VPN USERS -->
-      <section id="tab-users" class="dashboard-panel tab-panel">
-        <div class="dashboard-actions">
-          <button type="button" id="add-user-btn" class="btn btn-primary">➕ Добавить пользователя VPN</button>
-          <button type="button" id="refresh-users-btn" class="btn btn-secondary">🔄 Обновить список</button>
-          <button type="button" id="users-sync-btn" class="btn btn-secondary">📤 VPN Sync</button>
-          <p class="subtitle" style="margin-left:auto;">Пользователей: <strong id="users-count">0</strong></p>
+      <!-- VPN USERS (Collapsible) -->
+      <section id="tab-users" class="panel collapsible section-users is-open">
+        <div class="collapsible-header">
+          <span class="section-icon">👥</span>
+          <h2 class="collapsible-title">VPN Пользователи</h2>
+          <span class="chevron">▼</span>
         </div>
-        <div class="panel panel-table">
-          <div class="panel-header">
-            <p class="eyebrow">Управление учётками VPN (chap-secrets)</p>
-            <h2>VPN Пользователи</h2>
-            <p class="subtitle">Автоматически применяется в /etc/ppp/chap-secrets (L2TP) и /etc/accel-ppp/conf/chap-secrets (SSTP, если установлен).</p>
+        <div class="collapsible-body">
+          <div class="dashboard-actions">
+            <button type="button" id="add-user-btn" class="btn btn-primary">➕ Добавить пользователя VPN</button>
+            <button type="button" id="refresh-users-btn" class="btn btn-secondary">🔄 Обновить список</button>
+            <button type="button" id="users-sync-btn" class="btn btn-secondary">📤 VPN Sync</button>
+            <p class="subtitle" style="margin-left:auto;">Пользователей: <strong id="users-count">0</strong></p>
           </div>
-          <div class="table-wrapper">
-            <table id="users-table" class="routers-table">
-              <thead>
-                <tr>
-                  <th>Логин</th>
-                  <th>Привязка роутера</th>
-                  <th>Статус</th>
-                  <th>Протокол</th>
-                  <th>IP PPP</th>
-                  <th>Uptime</th>
-                  <th>Трафик</th>
-                  <th>Действия</th>
-                </tr>
-              </thead>
-              <tbody id="users-tbody">
-                <tr><td colspan="8" class="table-loading">Загрузка пользователей...</td></tr>
-              </tbody>
-            </table>
+          <div class="panel panel-table">
+            <div class="panel-header">
+              <p class="eyebrow">Управление учётками VPN (chap-secrets)</p>
+              <p class="subtitle">Автоматически применяется в /etc/ppp/chap-secrets (L2TP) и /etc/accel-ppp/conf/chap-secrets (SSTP, если установлен).</p>
+            </div>
+            <div class="table-wrapper">
+              <table id="users-table" class="routers-table">
+                <thead>
+                  <tr>
+                    <th>Логин</th>
+                    <th>Привязка роутера</th>
+                    <th>Статус</th>
+                    <th>Протокол</th>
+                    <th>IP PPP</th>
+                    <th>Uptime</th>
+                    <th>Трафик</th>
+                    <th>Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="users-tbody">
+                  <tr><td colspan="8" class="table-loading">Загрузка пользователей...</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
     </div>
 
-    <script defer src="app.js?v=20260831c"></script>
+    <script defer src="app.js?v=20260831d"></script>
 
     <!-- Password change modal -->
     <div id="password-modal" class="modal" style="display:none;">
