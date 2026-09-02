@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -30,15 +31,25 @@ def _create_default_admin():
         user_count = db.query(User).count()
         if user_count == 0:
             env_pw = os.environ.get("ADMIN_PASSWORD", "").strip()
-            default_pw = env_pw if env_pw else "admin"
+            if not env_pw:
+                print(
+                    "[FATAL DB BOOTSTRAP] Users table is EMPTY and ADMIN_PASSWORD env "
+                    "var is NOT set. Cannot create default admin account. Login will be "
+                    "impossible. Set ADMIN_PASSWORD=... in systemd unit / environment "
+                    "and restart vpn-manager.service. ABORTING bootstrap."
+                )
+                sys.stderr.write(
+                    "[FATAL] empty users + no ADMIN_PASSWORD env — startup aborted\n"
+                )
+                return
             admin = User(
                 username="admin",
-                hashed_password=get_password_hash(default_pw),
+                hashed_password=get_password_hash(env_pw),
                 is_admin=True,
             )
             db.add(admin)
             db.commit()
-            print(f"[+] Default admin created: admin / {'<from ADMIN_PASSWORD env>' if env_pw else 'admin (CHANGE THIS!)'}")
+            print("[+] Default admin created: admin / <from ADMIN_PASSWORD env>")
     except Exception as e:
         print(f"[!] Warning: failed to create default admin: {e}")
     finally:
@@ -75,7 +86,7 @@ async def add_cache_headers(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -126,8 +137,8 @@ async def health_check():
 async def api_info():
     return {
         "name": "VPN VDS Manager API",
-        "version": "1.0.1",
-        "default_login": "admin / admin (CHANGE THIS!)",
+        "version": "1.1.0",
+        "auth_required": True,
         "docs": "/docs",
         "frontend_dir": str(FRONTEND_DIR) if FRONTEND_DIR else None,
         "endpoints": {

@@ -198,10 +198,6 @@ function getPageType() {
   return "config";
 }
 
-initPage().catch((error) => {
-  console.error("Init error:", error);
-});
-
 async function initPage() {
   const pageType = getPageType();
 
@@ -229,34 +225,48 @@ async function initPage() {
 }
 
 function initLoginPage() {
+  if (window._loginPageInitRan === true) return;
+  window._loginPageInitRan = true;
+
   const form = document.querySelector("#login-form");
   const statusNode = document.querySelector("#login-status");
   const loginBtn = document.querySelector("#login-btn");
+  const usernameInput = document.querySelector("#username");
+  const pwInput = document.querySelector("#password");
+  const usernameError = document.querySelector('[data-error-for="username"]');
+  const passwordError = document.querySelector('[data-error-for="password"]');
+
+  if (!form || !loginBtn || !usernameInput || !pwInput) {
+    console.warn("[initLoginPage] required DOM elements missing, abort");
+    return;
+  }
 
   async function doLogin() {
-    const username = document.querySelector("#username").value.trim();
-    const password = document.querySelector("#password").value;
-    const usernameError = document.querySelector('[data-error-for="username"]');
-    const passwordError = document.querySelector('[data-error-for="password"]');
+    const username = usernameInput.value.trim();
+    const password = pwInput.value;
 
-    usernameError.textContent = "";
-    passwordError.textContent = "";
+    if (usernameError) usernameError.textContent = "";
+    if (passwordError) passwordError.textContent = "";
 
     let hasError = false;
     if (!username) {
-      usernameError.textContent = "Введите логин.";
+      if (usernameError) usernameError.textContent = "Введите логин.";
       hasError = true;
     }
     if (!password) {
-      passwordError.textContent = "Введите пароль.";
+      if (passwordError) passwordError.textContent = "Введите пароль.";
       hasError = true;
     }
     if (hasError) return;
 
+    const originalText = loginBtn.textContent;
     loginBtn.disabled = true;
-    statusNode.style.display = "block";
-    statusNode.textContent = "Вход...";
-    statusNode.className = "status status-loading";
+    loginBtn.textContent = "⏳ Вход...";
+    if (statusNode) {
+      statusNode.style.display = "block";
+      statusNode.textContent = "Вход...";
+      statusNode.className = "status status-loading";
+    }
 
     try {
       const formBody = new URLSearchParams();
@@ -273,8 +283,10 @@ function initLoginPage() {
 
       if (result.access_token) {
         setToken(result.access_token);
-        statusNode.textContent = "Успешный вход! Перенаправление...";
-        statusNode.className = "status status-success";
+        if (statusNode) {
+          statusNode.textContent = "Успешный вход! Перенаправление...";
+          statusNode.className = "status status-success";
+        }
         setTimeout(() => {
           window.location.href = "dashboard.html";
         }, 500);
@@ -282,9 +294,12 @@ function initLoginPage() {
         throw new Error("Неверный ответ сервера");
       }
     } catch (error) {
-      statusNode.textContent = error.message || "Ошибка входа";
-      statusNode.className = "status status-error";
+      if (statusNode) {
+        statusNode.textContent = error.message || "Ошибка входа";
+        statusNode.className = "status status-error";
+      }
       loginBtn.disabled = false;
+      loginBtn.textContent = originalText;
     }
   }
 
@@ -295,25 +310,23 @@ function initLoginPage() {
     doLogin();
   });
 
-  if (loginBtn) {
-    loginBtn.addEventListener("click", (e) => {
+  loginBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    doLogin();
+  });
+
+  pwInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
       e.preventDefault();
       doLogin();
-    });
-  }
-
-  const pwInput = document.querySelector("#password");
-  if (pwInput) {
-    pwInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        doLogin();
-      }
-    });
-  }
+    }
+  });
 }
 
 async function initDashboardPage() {
+  if (window._dashboardPageInitRan === true) return;
+  window._dashboardPageInitRan = true;
+
   const logoutBtn = document.querySelector("#logout-btn");
   const refreshBtn = document.querySelector("#refresh-btn");
   const refreshSessionsBtn = document.querySelector("#refresh-sessions-btn");
@@ -328,17 +341,32 @@ async function initDashboardPage() {
   // Tab switching
   state.activeTab = "dashboard";
   document.querySelectorAll("[data-tab]").forEach((btn) => {
+    if (!btn) return;
     btn.addEventListener("click", () => {
       const tab = btn.getAttribute("data-tab");
       switchDashboardTab(tab);
     });
   });
 
-  logoutBtn.addEventListener("click", () => {
-    redirectToLogin();
-  });
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", () => {
+      redirectToLogin();
+    });
+  }
 
-  refreshBtn.addEventListener("click", loadDashboardData);
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", async () => {
+      const orig = refreshBtn.textContent;
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "⏳ Обновление...";
+      try {
+        await loadDashboardData();
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = orig;
+      }
+    });
+  }
   if (refreshSessionsBtn) refreshSessionsBtn.addEventListener("click", loadDashboardData);
   if (refreshUsersBtn) refreshUsersBtn.addEventListener("click", loadDashboardData);
 
@@ -520,10 +548,18 @@ function switchDashboardTab(tab) {
 }
 
 async function loadDashboardData() {
+  window._lastDashboardFetchId = (window._lastDashboardFetchId || 0) + 1;
+  const thisFetchId = window._lastDashboardFetchId;
+  if (window._dashboardAbortController) {
+    try { window._dashboardAbortController.abort(); } catch (e) {}
+  }
+  const ac = new AbortController();
+  window._dashboardAbortController = ac;
+
   try {
     const [profiles, stats, sessionResp, usersResp] = await Promise.all([
-      apiFetch("/api/profiles").catch(() => []),
-      apiFetch("/api/monitoring/stats").catch(() => ({
+      apiFetch("/api/profiles", { signal: ac.signal }).catch(() => []),
+      apiFetch("/api/monitoring/stats", { signal: ac.signal }).catch(() => ({
         total_routers: 0,
         total_profiles: 0,
         online_count: 0,
@@ -534,9 +570,14 @@ async function loadDashboardData() {
         uptime_human: "—",
         uptime_seconds: 0,
       })),
-      apiFetch("/api/monitoring/sessions").catch(() => ({ count: 0, sessions: [] })),
-      apiFetch("/api/vpn/users").catch(() => ({ users: [] })),
+      apiFetch("/api/monitoring/sessions", { signal: ac.signal }).catch(() => ({ count: 0, sessions: [] })),
+      apiFetch("/api/vpn/users", { signal: ac.signal }).catch(() => ({ users: [] })),
     ]);
+
+    if (thisFetchId !== window._lastDashboardFetchId) {
+      console.warn("[loadDashboardData] stale response dropped (fetchId mismatch)");
+      return;
+    }
 
     const sessions = (sessionResp?.sessions || []).filter((s) => s?.online);
     const users = usersResp?.users || [];
@@ -591,24 +632,29 @@ async function loadDashboardData() {
     const online = allRouters.filter((r) => r._isOnline).length;
     const offline = Math.max(0, total - online);
 
-    // Stats cards
-    document.querySelector("#stat-total").textContent = stats?.total_routers != null ? stats.total_routers : total;
-    document.querySelector("#stat-online").textContent = stats?.online_count != null ? stats.online_count : online;
-    document.querySelector("#stat-offline").textContent = stats?.offline_count != null ? stats.offline_count : offline;
-    document.querySelector("#stat-traffic").textContent = stats?.total_traffic_human || `${stats?.total_traffic_gb || 0} GB`;
-    document.querySelector("#stat-profiles").textContent = `Профилей: ${stats?.total_profiles ?? (profiles?.length || 0)}`;
-    document.querySelector("#stat-uptime").textContent = `Uptime сервера: ${stats?.uptime_human || "—"}`;
-    document.querySelector("#stat-traffic-mb").textContent = `≈ ${stats?.total_traffic_mb ?? 0} MB`;
-    document.querySelector("#stat-sessions").textContent = `Активных сессий: ${sessions.length}`;
-    document.querySelector("#last-update").textContent = new Date().toLocaleTimeString("ru-RU");
+    // Stats cards — with null guards
+    var n;
+    n = document.querySelector("#stat-total"); if (n) n.textContent = stats?.total_routers != null ? stats.total_routers : total;
+    n = document.querySelector("#stat-online"); if (n) n.textContent = stats?.online_count != null ? stats.online_count : online;
+    n = document.querySelector("#stat-offline"); if (n) n.textContent = stats?.offline_count != null ? stats.offline_count : offline;
+    n = document.querySelector("#stat-traffic"); if (n) n.textContent = stats?.total_traffic_human || `${stats?.total_traffic_gb || 0} GB`;
+    n = document.querySelector("#stat-profiles"); if (n) n.textContent = `Профилей: ${stats?.total_profiles ?? (profiles?.length || 0)}`;
+    n = document.querySelector("#stat-uptime"); if (n) n.textContent = `Uptime сервера: ${stats?.uptime_human || "—"}`;
+    n = document.querySelector("#stat-traffic-mb"); if (n) n.textContent = `≈ ${stats?.total_traffic_mb ?? 0} MB`;
+    n = document.querySelector("#stat-sessions"); if (n) n.textContent = `Активных сессий: ${sessions.length}`;
+    n = document.querySelector("#last-update"); if (n) n.textContent = new Date().toLocaleTimeString("ru-RU");
 
-    document.querySelector("#sessions-count").textContent = sessions.length;
-    document.querySelector("#users-count").textContent = users.length;
+    n = document.querySelector("#sessions-count"); if (n) n.textContent = sessions.length;
+    n = document.querySelector("#users-count"); if (n) n.textContent = users.length;
 
     renderRoutersTable(allRouters);
     renderSessionsTable(sessions);
     renderUsersTable(users);
   } catch (error) {
+    if (error?.name === "AbortError") {
+      console.warn("[loadDashboardData] previous fetch aborted");
+      return;
+    }
     console.error("Dashboard load error:", error);
     const tbodies = ["routers-tbody", "sessions-tbody", "users-tbody"];
     const spans = [6, 8, 8];
@@ -933,6 +979,8 @@ document.addEventListener("submit", async (e) => {
 });
 
 async function initConfigPage() {
+  if (window._configPageInitRan === true) return;
+  window._configPageInitRan = true;
   _ST("initConfigPage: start");
   logoutBtn = document.querySelector("#logout-btn");
   if (logoutBtn) {
@@ -1273,6 +1321,26 @@ async function initConfigPage() {
     applyFieldState(field, input, wrapper, values);
     wrapper.replaceChild(input, fragment.querySelector(".field-input"));
 
+    // —— ONLY-ONE L2TP/SSTP check (handler installed BEFORE general change/input handler) ——
+    if (field.id === "enableL2tp" || field.id === "enableSstp") {
+      input.addEventListener("change", (ev) => {
+        const curVals = mergeSchemaDefaults(router.values || {}, state.schema?.fields);
+        const otherId = field.id === "enableL2tp" ? "enableSstp" : "enableL2tp";
+        const otherVal = (curVals[otherId] !== undefined && curVals[otherId] !== null)
+          ? Boolean(curVals[otherId])
+          : true;
+        const userIsUnchecking = ev.target.checked === false;
+        if (userIsUnchecking && !otherVal) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          input.checked = true;
+          router.values[field.id] = true;
+          setStatus("Нужен хотя бы один активный VPN-протокол (L2TP или SSTP). Сначала включите второй, если хотите переключиться.", "error");
+          return false;
+        }
+      }, true);
+    }
+
     const eventName = field.type === "select" || field.type === "checkbox" ? "change" : "input";
     input.addEventListener(eventName, async () => {
       const previousValues = { ...(router.values || {}) };
@@ -1297,27 +1365,69 @@ async function initConfigPage() {
         field.id === "ssid" ||
         field.id === "lanOctet";
 
-      try {
-        if (router.id) {
-          _ST(`SAVE PUT /routers/${router.id} START`, { name: router.name, valuesKeys: Object.keys(router.values).length });
-          const saveRes = await apiFetch(`/api/profiles/${getActiveProfile().id}/routers/${router.id}`, {
-            method: "PUT",
-            body: JSON.stringify({ name: router.name, values: router.values }),
-          });
-          _ST(`SAVE PUT /routers/${router.id} OK`, saveRes?.id ? { savedId: saveRes.id } : saveRes);
-        }
-
-        if (needRerender) {
-          renderAll();
-          formTitleNode.textContent = router.name || "Настройка роутера";
-        }
-
-        await refreshPreview();
-        _ST(`INPUT ${field.id} refreshPreview OK`, { previewLen: previewNode?.value?.length });
-      } catch (err) {
-        console.error(`[INPUT-ERROR ${field.id}]`, err?.stack || err);
-        setStatus(`Ошибка сохранения поля "${field.label}": ${err.message}`, "error");
+      // —— Debounced PUT save ——
+      if (window._autosaveTimer) {
+        clearTimeout(window._autosaveTimer);
+        window._autosaveTimer = null;
       }
+      window._autosaveTimer = setTimeout(async () => {
+        try {
+          // —— Save focus state BEFORE renderAll (which destroys current input DOM) ——
+          var savedFocus = null;
+          if (needRerender) {
+            const active = document.activeElement;
+            if (active && (active.tagName === "INPUT" || active.tagName === "SELECT" || active.tagName === "TEXTAREA")) {
+              savedFocus = {
+                fieldId: active.getAttribute("data-field-id") || active.getAttribute("name"),
+                start: 0,
+                end: 0,
+              };
+              try {
+                if (typeof active.selectionStart === "number") savedFocus.start = active.selectionStart || 0;
+                if (typeof active.selectionEnd === "number") savedFocus.end = active.selectionEnd || 0;
+              } catch (e) {}
+            }
+          }
+
+          if (router.id) {
+            _ST(`SAVE PUT /routers/${router.id} START`, { name: router.name, valuesKeys: Object.keys(router.values).length });
+            const saveRes = await apiFetch(`/api/profiles/${getActiveProfile().id}/routers/${router.id}`, {
+              method: "PUT",
+              body: JSON.stringify({ name: router.name, values: router.values }),
+            });
+            _ST(`SAVE PUT /routers/${router.id} OK`, saveRes?.id ? { savedId: saveRes.id } : saveRes);
+          }
+
+          if (needRerender) {
+            renderAll();
+            if (formTitleNode) formTitleNode.textContent = router.name || "Настройка роутера";
+
+            // —— Restore focus after rerender ——
+            if (savedFocus && savedFocus.fieldId) {
+              var target = document.querySelector(`input[data-field-id="${savedFocus.fieldId}"]`)
+                        || document.querySelector(`select[data-field-id="${savedFocus.fieldId}"]`)
+                        || document.querySelector(`textarea[data-field-id="${savedFocus.fieldId}"]`)
+                        || document.querySelector(`[name="${savedFocus.fieldId}"]`);
+              if (target) {
+                try {
+                  target.focus();
+                  if (typeof target.setSelectionRange === "function" && savedFocus.end !== undefined) {
+                    try {
+                      target.setSelectionRange(savedFocus.start, savedFocus.end);
+                    } catch (e) {}
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+
+          await refreshPreview();
+          _ST(`INPUT ${field.id} refreshPreview OK`, { previewLen: previewNode?.value?.length });
+        } catch (err) {
+          console.error(`[INPUT-ERROR ${field.id}]`, err?.stack || err);
+          setStatus(`Ошибка сохранения поля "${field.label}": ${err.message}`, "error");
+        }
+      }, field.type === "checkbox" || field.type === "select" ? 0 : 400);
     });
 
     return fragment;
@@ -1438,13 +1548,6 @@ async function initConfigPage() {
       if (empty && field.default !== undefined && field.default !== null) {
         merged[id] = field.default;
       }
-    }
-
-    const l2tpOff = merged.enableL2tp === false;
-    const sstpOff = merged.enableSstp === false;
-    if ((l2tpOff && !sstpOff) || (sstpOff && !l2tpOff)) {
-      merged.enableL2tp = true;
-      merged.enableSstp = true;
     }
 
     return merged;

@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 import shutil
 import subprocess
 from typing import Optional
 
 from ..models import Router
+
+logger = logging.getLogger(__name__)
 
 
 CHAP_SECRETS_PATH = "/etc/ppp/chap-secrets"
@@ -41,8 +44,8 @@ class VpnManager:
                 if os.path.isdir(chap_dir) and os.access(chap_dir, os.W_OK):
                     self._use_fallback = False
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.exception("VpnManager._detect_storage_mode chap_dir access failed")
             self._use_fallback = True
             return
         if not os.access(CHAP_SECRETS_PATH, os.R_OK) or not os.access(CHAP_SECRETS_PATH, os.W_OK):
@@ -77,7 +80,8 @@ class VpnManager:
                     user = self._parse_chap_line(line)
                     if user:
                         users.append(user)
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnManager._list_users_chap failed")
             return []
         return users
 
@@ -90,7 +94,8 @@ class VpnManager:
                 if isinstance(data, list):
                     return data
                 return []
-        except (json.JSONDecodeError, Exception):
+        except (json.JSONDecodeError, Exception) as e:
+            logger.exception("VpnManager._list_users_fallback failed")
             return []
 
     def add_user(self, username: str, password: str, ip_address: str = "*") -> bool:
@@ -113,7 +118,8 @@ class VpnManager:
             with open(CHAP_SECRETS_PATH, "a", encoding="utf-8") as f:
                 f.write(f"\n{username}\t*\t{password}\t{ip_address}\n")
             return True
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnManager._add_user_chap failed for user=%s", username)
             return False
 
     def _add_user_sstp(self, username: str, password: str, ip_address: str) -> bool:
@@ -135,7 +141,8 @@ class VpnManager:
             with open(ACCEL_PPP_SECRETS_PATH, "a", encoding="utf-8") as f:
                 f.write(f"\n{username}\t*\t{password}\t{ip_address}\n")
             return True
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnManager._add_user_sstp failed for user=%s", username)
             return False
 
     def _add_user_fallback(self, username: str, password: str, ip_address: str) -> bool:
@@ -153,7 +160,8 @@ class VpnManager:
             with open(self._fallback_path, "w", encoding="utf-8") as f:
                 json.dump(users, f, ensure_ascii=False, indent=2)
             return True
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnManager._add_user_fallback failed for user=%s", username)
             return False
 
     def remove_user(self, username: str) -> bool:
@@ -186,7 +194,8 @@ class VpnManager:
             with open(CHAP_SECRETS_PATH, "w", encoding="utf-8") as f:
                 f.writelines(new_lines)
             return True
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnManager._remove_user_chap failed for user=%s", username)
             return False
 
     def _remove_user_sstp(self, username: str) -> bool:
@@ -208,7 +217,8 @@ class VpnManager:
             with open(ACCEL_PPP_SECRETS_PATH, "w", encoding="utf-8") as f:
                 f.writelines(new_lines)
             return True
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnManager._remove_user_sstp failed for user=%s", username)
             return False
 
     def _remove_user_fallback(self, username: str) -> bool:
@@ -222,7 +232,8 @@ class VpnManager:
             with open(self._fallback_path, "w", encoding="utf-8") as f:
                 json.dump(users, f, ensure_ascii=False, indent=2)
             return True
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnManager._remove_user_fallback failed for user=%s", username)
             return False
 
     def restart_services(self) -> bool:
@@ -246,15 +257,22 @@ class VpnManager:
                 )
                 is_exists = f"{svc}.service" in (exists.stdout or "")
                 if is_active.returncode == 0 or is_exists:
-                    subprocess.run(
+                    res = subprocess.run(
                         ["systemctl", "restart", svc],
                         capture_output=True,
                         check=False,
                     )
-                    restarted_any = True
-            except Exception:
+                    if res.returncode == 0:
+                        restarted_any = True
+                    else:
+                        logger.error(
+                            "VpnManager.restart_services: systemctl restart %s failed rc=%s stderr=%s",
+                            svc, res.returncode, (res.stderr or b"").decode(errors="replace")[:200]
+                        )
+            except Exception as e:
+                logger.exception("VpnManager.restart_services exception on svc=%s", svc)
                 continue
-        return restarted_any or True
+        return restarted_any
 
     def sync_routers_to_vpn(self, db_session) -> dict:
         result = {"added": 0, "removed": 0, "skipped": 0}

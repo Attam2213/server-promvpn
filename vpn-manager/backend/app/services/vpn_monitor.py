@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import subprocess
@@ -5,6 +6,8 @@ import shutil
 import time
 from datetime import datetime
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class VpnMonitor:
@@ -33,8 +36,8 @@ class VpnMonitor:
                             return float(line.split()[1])
             else:
                 return time.time() - 3600 * 24 * 7
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("VpnMonitor._get_boot_time failed, using fallback")
         return time.time() - 3600 * 24 * 7
 
     def _get_db_router_username_map(self) -> dict:
@@ -63,8 +66,8 @@ class VpnMonitor:
                             }
             finally:
                 db.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("VpnMonitor._get_db_router_username_map failed")
         return mapping
 
     def _count_db_routers(self) -> int:
@@ -77,7 +80,8 @@ class VpnMonitor:
                 return db.query(Router).count()
             finally:
                 db.close()
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnMonitor._count_db_routers failed")
             return 0
 
     def _count_db_profiles(self) -> int:
@@ -90,7 +94,8 @@ class VpnMonitor:
                 return db.query(Profile).count()
             finally:
                 db.close()
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnMonitor._count_db_profiles failed")
             return 0
 
     def get_active_sessions(self) -> list:
@@ -249,7 +254,8 @@ class VpnMonitor:
                     ts = datetime.fromisoformat(str(s["connected_at"]).replace("Z", "")).timestamp()
                     s["uptime_seconds"] = max(0, int(time.time() - ts))
                     s["uptime_human"] = self._format_uptime(s["uptime_seconds"])
-                except Exception:
+                except Exception as e:
+                    logger.warning("VpnMonitor uptime parse failed connected_at=%s err=%s", s.get("connected_at"), e)
                     s["uptime_seconds"] = 0
                     s["uptime_human"] = ""
             else:
@@ -342,7 +348,8 @@ class VpnMonitor:
             for iface, data in traffic_map.items():
                 if iface.startswith(("ens", "eth", "ppp", "sstp")):
                     system_traffic_bytes += (data.get("bytes_in") or 0) + (data.get("bytes_out") or 0)
-        except Exception:
+        except Exception as e:
+            logger.exception("VpnMonitor.get_server_stats _parse_proc_net_dev aggregation failed")
             system_traffic_bytes = total_traffic_bytes
 
         total_traffic_bytes = max(total_traffic_bytes, system_traffic_bytes)
@@ -388,9 +395,49 @@ class VpnMonitor:
                     "packets_in": int(counters[1]),
                     "packets_out": int(counters[9]),
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("VpnMonitor._parse_proc_net_dev parse failed")
         return traffic
+
+    @staticmethod
+    def _inline_kv_to_dict(tail: str) -> dict:
+        """Parse inline key=value or key:value pairs from the remainder of a call line.
+
+        Example tail: " username=vpn199 interface=ppp0 peerIP=10.255.0.101 rx-bytes=12345"
+        """
+        out = {}
+        if not tail:
+            return out
+        parts = re.findall(r"([A-Za-z0-9._-]+)\s*[:=]\s*('[^']*'|\"[^\"]*\"|\S+)", tail)
+        for raw_k, raw_v in parts:
+            k = raw_k.strip().lower()
+            v = raw_v.strip().strip("'\"")
+            out[k] = v
+        return out
+
+    def _apply_xl2tp_kv(self, current_call: dict, raw_key: str, raw_val: str):
+        if not current_call or raw_key is None:
+            return
+        key = str(raw_key).strip().lower()
+        val = str(raw_val).strip().strip("'\"")
+        if key in ("username", "name", "login"):
+            current_call["username"] = val
+        elif key in ("interface", "ifname", "pppiface"):
+            current_call["interface"] = val
+        elif key in ("ip", "ip_address", "peer_ip", "remoteip", "peerip"):
+            current_call["ip_address"] = val
+        elif key in ("connected", "connected_since", "start_time", "time", "uptime"):
+            current_call["connected_at"] = self._parse_time_str(val)
+        elif key in ("rx_bytes", "bytes_in", "rxbytes", "rx-bytes", "rx.octets", "receivedoctets"):
+            try:
+                current_call["bytes_in"] = int(val)
+            except (TypeError, ValueError):
+                pass
+        elif key in ("tx_bytes", "bytes_out", "txbytes", "tx-bytes", "tx.octets", "transmitoctets"):
+            try:
+                current_call["bytes_out"] = int(val)
+            except (TypeError, ValueError):
+                pass
 
     def _parse_xl2tpd_control(self) -> list:
         sessions = []
@@ -410,7 +457,9 @@ class VpnMonitor:
             current_call = None
             for line in output.splitlines():
                 line = line.strip()
-                call_match = re.match(r"^call\s+#?\s*(\d+)", line, re.I)
+                if not line:
+                    continue
+                call_match = re.match(r"^call\s+#?\s*(\d+)\b(.*)$", line, re.I)
                 if call_match:
                     if current_call:
                         sessions.append(current_call)
@@ -424,29 +473,20 @@ class VpnMonitor:
                         "bytes_out": 0,
                         "protocol": "l2tp",
                     }
+                    tail = call_match.group(2) or ""
+                    inline = self._inline_kv_to_dict(tail)
+                    for k, v in inline.items():
+                        self._apply_xl2tp_kv(current_call, k, v)
                     continue
                 if current_call is None:
                     continue
-                kv_match = re.match(r"^([a-zA-Z0-9_-]+)\s*[:=]\s*(.+)$", line)
+                kv_match = re.match(r"^([a-zA-Z0-9._-]+)\s*[:=]\s*(.+)$", line)
                 if kv_match:
-                    key = kv_match.group(1).lower()
-                    val = kv_match.group(2).strip()
-                    if key in ("username", "name", "login"):
-                        current_call["username"] = val.strip().strip("'\"")
-                    elif key in ("interface", "ifname", "pppiface"):
-                        current_call["interface"] = val.strip()
-                    elif key in ("ip", "ip_address", "peer_ip", "remoteip"):
-                        current_call["ip_address"] = val.strip()
-                    elif key in ("connected", "connected_since", "start_time", "time"):
-                        current_call["connected_at"] = self._parse_time_str(val)
-                    elif key in ("rx_bytes", "bytes_in", "rxbytes"):
-                        current_call["bytes_in"] = int(val)
-                    elif key in ("tx_bytes", "bytes_out", "txbytes"):
-                        current_call["bytes_out"] = int(val)
+                    self._apply_xl2tp_kv(current_call, kv_match.group(1), kv_match.group(2))
             if current_call:
                 sessions.append(current_call)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("VpnMonitor._parse_xl2tpd_control failed")
         return sessions
 
     def _parse_ipsec_status(self) -> list:
@@ -471,8 +511,8 @@ class VpnMonitor:
                 if result.returncode != 0 or not result.stdout:
                     continue
                 sessions.extend(self._parse_ipsec_output(result.stdout, cmd))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.exception("VpnMonitor._parse_ipsec_status cmd=%s failed", cmd)
         return sessions
 
     def _parse_ipsec_output(self, output: str, cmd) -> list:
@@ -547,8 +587,8 @@ class VpnMonitor:
                     "bytes_in": int(rx_m.group(1)) if rx_m else 0,
                     "bytes_out": int(tx_m.group(1)) if tx_m else 0,
                 })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("VpnMonitor._parse_ipsec_status ipsec.conf peer-session parse failed")
         return sessions
 
     def _parse_accel_cmd(self) -> list:
@@ -632,8 +672,8 @@ class VpnMonitor:
                         pass
                 if sess["interface"] or sess["username"] or sess["ip_address"]:
                     sessions.append(sess)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("VpnMonitor._parse_accel_cmd outer parse failed")
         return sessions
 
     @staticmethod
@@ -733,8 +773,8 @@ class VpnMonitor:
                         "ip_address": parts[5] if len(parts) > 5 else "",
                     }
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("VpnMonitor._parse_who outer failed")
         return sessions
 
     def _parse_pppd_sessions(self) -> list:
@@ -790,8 +830,8 @@ class VpnMonitor:
                                     "ip_address": "",
                                 }
                             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("VpnMonitor._parse_pppd_sessions outer failed")
         return sessions
 
     def _parse_ppp_file(self, file_path: str) -> list:
@@ -821,8 +861,8 @@ class VpnMonitor:
                         "ip_address": "",
                     }
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("VpnMonitor._parse_ppp_file failed path=%s", file_path)
         return sessions
 
     @staticmethod

@@ -1,7 +1,9 @@
 import json
 import os
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Depends
 from ..services.config_generator import ConfigGenerator
+from ..auth import get_current_active_admin
+from ..models import User
 
 router = APIRouter(prefix="/api/configs", tags=["configs"])
 
@@ -17,7 +19,7 @@ def _get_schema_path() -> str:
 
 
 @router.get("/schema")
-async def get_schema():
+async def get_schema(_admin: User = Depends(get_current_active_admin)):
     schema_path = _get_schema_path()
     if not os.path.exists(schema_path):
         raise HTTPException(status_code=404, detail="Schema file not found")
@@ -31,7 +33,10 @@ async def get_schema():
 
 
 @router.post("/validate")
-async def validate_config(body: dict = Body(...)):
+async def validate_config(
+    body: dict = Body(...),
+    _admin: User = Depends(get_current_active_admin),
+):
     try:
         values = body.get("values", body)
         result = _config_generator.validate(values)
@@ -41,7 +46,10 @@ async def validate_config(body: dict = Body(...)):
 
 
 @router.post("/build")
-async def build_config(body: dict = Body(...)):
+async def build_config(
+    body: dict = Body(...),
+    _admin: User = Depends(get_current_active_admin),
+):
     try:
         values = body.get("values", body)
         validation = _config_generator.validate(values)
