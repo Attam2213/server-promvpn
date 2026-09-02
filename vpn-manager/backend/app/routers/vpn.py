@@ -69,8 +69,9 @@ async def list_vpn_users(
             uname_lower = str(u.get("username") or "").strip().lower()
             info = router_map.get(uname_lower, {})
             sess = online_users.get(uname_lower)
+            public = {"username": u.get("username"), "ip_address": u.get("ip_address", "*")}
             enriched.append({
-                **u,
+                **public,
                 "online": bool(sess),
                 "router_id": info.get("router_id"),
                 "router_name": info.get("router_name", ""),

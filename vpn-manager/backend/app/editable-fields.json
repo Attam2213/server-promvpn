@@ -25,6 +25,30 @@
       }
     },
     {
+      "id": "routerAdminUser",
+      "label": "MikroTik admin логин",
+      "section": "Идентификация",
+      "type": "text",
+      "required": true,
+      "default": "admin",
+      "placeholder": "admin",
+      "help": "Имя пользователя для входа в Winbox/WebFig роутера. Стандартно — admin.",
+      "validation": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_.-]{1,31}$",
+        "message": "Логин 2-32 символа a-z 0-9 . - _"
+      }
+    },
+    {
+      "id": "routerAdminPassword",
+      "label": "MikroTik admin пароль (Winbox)",
+      "section": "Идентификация",
+      "type": "password",
+      "required": true,
+      "default": "Hager2213@",
+      "placeholder": "Надёжный пароль не менее 10 символов",
+      "help": "Пароль от пользователя MikroTik. Меняется автоматически при импорте .rsc (создаётся пользователь с этим паролем, все старые удаляются). Минимум 10 символов и 4 разных."
+    },
+    {
       "id": "hasWifi",
       "label": "Есть Wi-Fi",
       "section": "Wi-Fi",

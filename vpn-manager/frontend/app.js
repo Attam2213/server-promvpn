@@ -191,6 +191,93 @@ function downloadText(fileName, text) {
   URL.revokeObjectURL(url);
 }
 
+(function initToastSystem() {
+  let container = null;
+  function getContainer() {
+    if (!container) {
+      container = document.createElement("div");
+      container.className = "toast-container";
+      container.setAttribute("role", "status");
+      container.setAttribute("aria-live", "polite");
+      document.body.appendChild(container);
+    }
+    return container;
+  }
+  window.toast = function toast(type, message, timeoutMs) {
+    const t = type || "info";
+    const msg = message == null ? "" : String(message);
+    const timeout = typeof timeoutMs === "number" ? timeoutMs : (t === "error" ? 8000 : 5000);
+    const wrap = document.createElement("div");
+    wrap.className = `toast toast-${t}`;
+    const iconMap = { success: "✅", error: "❌", info: "ℹ️", warn: "⚠️" };
+    const icon = iconMap[t] || iconMap.info;
+    wrap.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-msg"></span><button type="button" class="toast-close" aria-label="Закрыть">×</button>`;
+    wrap.querySelector(".toast-msg").textContent = msg;
+    const closeBtn = wrap.querySelector(".toast-close");
+    let dismissed = false;
+    function dismiss() {
+      if (dismissed) return;
+      dismissed = true;
+      wrap.style.transition = "opacity 0.25s ease, transform 0.25s ease";
+      wrap.style.opacity = "0";
+      wrap.style.transform = "translateY(6px) scale(0.98)";
+      setTimeout(() => { try { wrap.remove(); } catch {} }, 280);
+    }
+    closeBtn.addEventListener("click", dismiss);
+    getContainer().appendChild(wrap);
+    requestAnimationFrame(() => {
+      wrap.style.transition = "opacity 0.25s ease, transform 0.25s ease";
+      wrap.style.opacity = "1";
+      wrap.style.transform = "translateY(0) scale(1)";
+    });
+    if (timeout > 0) {
+      setTimeout(dismiss, timeout);
+    }
+    return dismiss;
+  };
+  window.confirmDialog = function confirmDialog(title, message) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      overlay.innerHTML = `
+        <div class="confirm-dialog" role="alertdialog" aria-modal="true">
+          <div class="confirm-title"></div>
+          <div class="confirm-message"></div>
+          <div class="confirm-actions">
+            <button type="button" class="btn btn-ghost confirm-cancel">Отмена</button>
+            <button type="button" class="btn btn-danger confirm-ok">Да</button>
+          </div>
+        </div>`;
+      overlay.querySelector(".confirm-title").textContent = title || "Подтверждение";
+      const msgEl = overlay.querySelector(".confirm-message");
+      if (typeof message === "string") {
+        msgEl.style.whiteSpace = "pre-line";
+        msgEl.textContent = message;
+      }
+      let settled = false;
+      function finish(value) {
+        if (settled) return;
+        settled = true;
+        overlay.style.transition = "opacity 0.18s ease";
+        overlay.style.opacity = "0";
+        setTimeout(() => { try { overlay.remove(); } catch {} }, 220);
+        resolve(value);
+      }
+      overlay.querySelector(".confirm-ok").addEventListener("click", () => finish(true));
+      overlay.querySelector(".confirm-cancel").addEventListener("click", () => finish(false));
+      overlay.addEventListener("click", (ev) => { if (ev.target === overlay) finish(false); });
+      document.addEventListener("keydown", function esc(e) {
+        if (e.key === "Escape") { document.removeEventListener("keydown", esc); finish(false); }
+        else if (e.key === "Enter") { document.removeEventListener("keydown", esc); finish(true); }
+      });
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => {
+        overlay.style.opacity = "1";
+      });
+    });
+  };
+})();
+
 function getPageType() {
   const path = window.location.pathname;
   if (path.endsWith("login.html")) return "login";
@@ -321,6 +408,25 @@ function initLoginPage() {
       doLogin();
     }
   });
+
+  // Login page password visibility toggle 👁
+  const pwToggleBtn = document.querySelector("#pw-toggle");
+  if (pwToggleBtn && pwInput) {
+    pwToggleBtn.addEventListener("click", () => {
+      const current = String(pwInput.type || "password");
+      const next = current === "password" ? "text" : "password";
+      pwInput.type = next;
+      pwToggleBtn.textContent = next === "password" ? "👁" : "🙈";
+      pwToggleBtn.setAttribute("aria-label", next === "password" ? "Показать пароль" : "Скрыть пароль");
+      try {
+        pwInput.focus();
+        if (next === "text") {
+          const len = (pwInput.value || "").length;
+          pwInput.setSelectionRange(len, len);
+        }
+      } catch (e) { /* ignore selection on some input types */ }
+    });
+  }
 }
 
 async function initDashboardPage() {
@@ -376,15 +482,16 @@ async function initDashboardPage() {
       vpnSyncBtn.textContent = "⏳ Синхронизация...";
       try {
         const result = await apiFetch("/api/vpn/sync", { method: "POST" });
-        alert(
-          `✅ VPN Sync выполнен!\n\n` +
+        const msg = (
+          `✅ VPN Sync выполнен!\n` +
           `➕ Добавлено: ${result.added}\n` +
           `➖ Удалено: ${result.removed}\n` +
-          `⏭ Пропущено (уже существуют): ${result.skipped}\n`,
+          `⏭ Пропущено: ${result.skipped}`
         );
+        toast("success", msg);
         await loadDashboardData();
       } catch (error) {
-        alert(`❌ Ошибка VPN Sync: ${error.message}`);
+        toast("error", `❌ Ошибка VPN Sync: ${error.message}`);
       } finally {
         vpnSyncBtn.disabled = false;
         vpnSyncBtn.textContent = "📤 VPN Sync (роутеры → chap-secrets)";
@@ -398,15 +505,16 @@ async function initDashboardPage() {
       usersSyncBtn.textContent = "⏳ Синхронизация...";
       try {
         const result = await apiFetch("/api/vpn/sync", { method: "POST" });
-        alert(
-          `✅ VPN Sync выполнен!\n\n` +
+        const msg = (
+          `✅ VPN Sync выполнен!\n` +
           `➕ Добавлено: ${result.added}\n` +
           `➖ Удалено: ${result.removed}\n` +
-          `⏭ Пропущено: ${result.skipped}\n`,
+          `⏭ Пропущено: ${result.skipped}`
         );
+        toast("success", msg);
         await loadDashboardData();
       } catch (error) {
-        alert(`❌ Ошибка VPN Sync: ${error.message}`);
+        toast("error", `❌ Ошибка VPN Sync: ${error.message}`);
       } finally {
         usersSyncBtn.disabled = false;
         usersSyncBtn.textContent = "📤 VPN Sync";
@@ -416,14 +524,18 @@ async function initDashboardPage() {
 
   if (vpnRestartBtn) {
     vpnRestartBtn.addEventListener("click", async () => {
-      if (!confirm("Перезапустить службы VPN (xl2tpd/accel-ppp/ipsec) на сервере?")) return;
+      const ok = await confirmDialog(
+        "Перезапуск VPN служб",
+        "Перезапустить службы VPN (xl2tpd/accel-ppp/ipsec) на сервере?",
+      );
+      if (!ok) return;
       vpnRestartBtn.disabled = true;
       vpnRestartBtn.textContent = "⏳ Перезапуск...";
       try {
         const result = await apiFetch("/api/vpn/restart", { method: "POST" });
-        alert(`✅ ${result.message || "Службы VPN перезапущены."}`);
+        toast("success", `✅ ${result.message || "Службы VPN перезапущены."}`);
       } catch (error) {
-        alert(`❌ Ошибка перезапуска VPN: ${error.message}`);
+        toast("error", `❌ Ошибка перезапуска VPN: ${error.message}`);
       } finally {
         vpnRestartBtn.disabled = false;
         vpnRestartBtn.textContent = "🔁 Перезапустить VPN службы";
@@ -528,6 +640,110 @@ async function initDashboardPage() {
       closeVpnUserModal();
     }
   });
+
+  // --- Dashboard: search input (debounced 250ms) re-applies filter ---
+  const searchInput = document.querySelector("#routerSearchInput");
+  if (searchInput) {
+    let _t = null;
+    searchInput.addEventListener("input", () => {
+      if (_t) clearTimeout(_t);
+      _t = setTimeout(() => {
+        const cur = (window._lastDashboardRoutersSnapshot || []).slice();
+        renderRoutersTable(cur);
+      }, 220);
+    });
+  }
+
+  // --- Dashboard: delegated click for 🧬 Дубликат router row button ---
+  document.addEventListener("click", async (ev) => {
+    const btn = ev.target && ev.target.closest && ev.target.closest(".btn-duplicate-router");
+    if (!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const routerId = decodeURIComponent(String(btn.getAttribute("data-router-id") || ""));
+    const profileId = decodeURIComponent(String(btn.getAttribute("data-profile-id") || ""));
+    if (!routerId || !profileId) {
+      toast("warn", "Не найдены routerId / profileId для дубликата.");
+      return;
+    }
+    btn.disabled = true;
+    const oldLabel = btn.textContent;
+    btn.textContent = "⏳ Клонирую...";
+    try {
+      const profile = (await apiFetch("/api/profiles")).find((p) => String(p.id) === String(profileId));
+      if (!profile) throw new Error("Профиль #"+profileId+" не найден в /api/profiles");
+      const allRouters = (profile.routers || []).slice();
+      const sourceRouter = allRouters.find((r) => String(r.id) === String(routerId));
+      if (!sourceRouter) throw new Error("Роутер #"+routerId+" не найден в профиле #"+profileId);
+      const usedLans = new Set();
+      allRouters.forEach((r) => {
+        const o = Number((r.values || {}).lanOctet);
+        if (Number.isInteger(o) && o >= 1 && o <= 254) usedLans.add(o);
+      });
+      let newLan = null;
+      for (let i = 1; i <= 254; i++) {
+        if (!usedLans.has(i)) { newLan = i; break; }
+      }
+      if (newLan == null) throw new Error("Все LAN октеты 1-254 заняты в профиле — освободите один.");
+      const newVpnUser = `vpn${newLan}`;
+      const hexByte = () => Math.floor(Math.random()*256).toString(16).padStart(2,"0");
+      const newMac = `02:${hexByte()}:${hexByte()}:${hexByte()}:${hexByte()}:${hexByte()}`;
+      const srcVals = { ...(sourceRouter.values || {}) };
+      const newVals = {};
+      Object.keys(srcVals).forEach((k) => { newVals[k] = srcVals[k]; });
+      newVals.lanOctet = newLan;
+      newVals.routerMacAddress = newMac;
+      if (newVals.l2tpUser && /^vpn\d+$/.test(String(newVals.l2tpUser))) {
+        newVals.l2tpUser = newVpnUser;
+      }
+      if (newVals.sstpUser && /^vpn\d+$/.test(String(newVals.sstpUser))) {
+        newVals.sstpUser = newVpnUser;
+      }
+      const srcName = sourceRouter.name || (newVals.routerName || "Роутер");
+      const newName = `${srcName} копия (LAN ${newLan})`.slice(0, 80);
+      if (newVals.routerName) newVals.routerName = newName;
+      const created = await apiFetch(`/api/profiles/${encodeURIComponent(profileId)}/routers`, {
+        method: "POST",
+        body: JSON.stringify({ name: newName, values: newVals }),
+      });
+      toast("success", `✅ Роутер клонирован! Новый LAN=${newLan}, MAC=${newMac}, VPN=${newVpnUser}. Перехожу в конфиг...`);
+      const qs = `?profileId=${encodeURIComponent(profileId)}&routerId=${encodeURIComponent(created && created.id ? String(created.id) : "")}&v=${encodeURIComponent("20260902b")}`;
+      setTimeout(() => { window.location.href = `index.html${qs}`; }, 700);
+    } catch (e) {
+      toast("error", `❌ Ошибка дубликата роутера: ${e.message}`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldLabel;
+    }
+  });
+
+  // --- Config page (index.html): 📋 copy-RSC preview ---
+  const copyRscBtn = document.querySelector("#copyRscButton");
+  if (copyRscBtn) {
+    copyRscBtn.addEventListener("click", async () => {
+      const preview = document.querySelector("#preview");
+      const text = preview ? String(preview.value || "") : "";
+      if (!text.trim()) {
+        toast("warn", "⚠️ Предпросмотр RSC пуст — сначала выберите роутер в настройках.");
+        return;
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          preview.focus();
+          preview.select();
+          preview.setSelectionRange(0, text.length);
+          document.execCommand("copy");
+          try { preview.setSelectionRange(0,0); } catch {}
+        }
+        const lines = text.split(/\r?\n/).length;
+        toast("success", `📋 RSC скопирован в буфер (${lines} строк).`);
+      } catch (e) {
+        toast("error", `❌ Не удалось скопировать RSC: ${e.message}`);
+      }
+    });
+  }
 
   initCollapsibles(document);
   await loadDashboardData();
@@ -647,6 +863,8 @@ async function loadDashboardData() {
     n = document.querySelector("#sessions-count"); if (n) n.textContent = sessions.length;
     n = document.querySelector("#users-count"); if (n) n.textContent = users.length;
 
+    try { window._lastDashboardRoutersSnapshot = (allRouters || []).slice(); } catch (e) { window._lastDashboardRoutersSnapshot = []; }
+
     renderRoutersTable(allRouters);
     renderSessionsTable(sessions);
     renderUsersTable(users);
@@ -669,17 +887,42 @@ function renderRoutersTable(routers) {
   const tbody = document.querySelector("#routers-tbody");
   if (!tbody) return;
 
-  if (routers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="table-empty">Нет роутеров. Откройте «Конфиг», чтобы создать профиль/роутер.</td></tr>`;
+  const searchInput = document.querySelector("#routerSearchInput");
+  const q = (searchInput ? String(searchInput.value || "").trim().toLowerCase() : "");
+
+  const displayRouters = q
+    ? routers.filter((r) => {
+        const hay = [
+          r._name,
+          r._profileName,
+          r._vpnLogin,
+          r._lanSubnet,
+          r._ssid,
+          r._router_id,
+          r.profileId,
+        ]
+          .filter((x) => x != null)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      })
+    : routers;
+
+  if (displayRouters.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="table-empty">${
+      routers.length === 0
+        ? "Нет роутеров. Откройте «Конфиг», чтобы создать профиль/роутер."
+        : `Ничего не найдено по запросу «${escapeHtml(q)}». Показано 0 из ${routers.length}.`
+    }</td></tr>`;
     return;
   }
 
   tbody.innerHTML = "";
-  routers.sort((a, b) => {
+  displayRouters.sort((a, b) => {
     if (a._isOnline !== b._isOnline) return a._isOnline ? -1 : 1;
     return String(a._name).localeCompare(String(b._name), "ru");
   });
-  for (const r of routers) {
+  for (const r of displayRouters) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>
@@ -696,7 +939,10 @@ function renderRoutersTable(routers) {
       </td>
       <td>${escapeHtml(r._uptime)}</td>
       <td class="traffic-value">${escapeHtml(r._traffic)}</td>
-      <td>
+      <td style="display:flex; gap:12px; flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary btn-sm btn-duplicate-router" data-router-id="${encodeURIComponent(r._router_id || "")}" data-profile-id="${encodeURIComponent(r.profileId || "")}" title="Создать копию роутера со свободным LAN">
+          🧬 Дубликат
+        </button>
         <a class="btn btn-secondary btn-sm" href="index.html?profileId=${encodeURIComponent(r.profileId || "")}&routerId=${encodeURIComponent(r._router_id || "")}">Открыть</a>
       </td>
     `;
@@ -783,12 +1029,16 @@ function renderUsersTable(users) {
   tbody.querySelectorAll(".btn-delete-user").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const uname = decodeURIComponent(btn.getAttribute("data-username") || "");
-      if (!confirm(`Удалить VPN пользователя "${uname}"?\n(он будет удалён из chap-secrets, VPN туннель MikroTik отвалится)`)) return;
+      const ok = await confirmDialog(
+        `Удалить VPN пользователя "${uname}"?`,
+        `Он будет удалён из chap-secrets, VPN туннель MikroTik отвалится.`,
+      );
+      if (!ok) return;
       try {
         await apiFetch(`/api/vpn/users/${encodeURIComponent(uname)}`, { method: "DELETE" });
         await loadDashboardData();
       } catch (e) {
-        alert(`❌ Ошибка удаления: ${e.message}`);
+        toast("error", `❌ Ошибка удаления: ${e.message}`);
       }
     });
   });
@@ -966,7 +1216,7 @@ document.addEventListener("submit", async (e) => {
     }
     setTimeout(() => {
       closePasswordModal();
-      alert("✅ Пароль успешно изменён! Запомните новый пароль.");
+      toast("success", "✅ Пароль успешно изменён! Запомните новый пароль.");
     }, 800);
   } catch (error) {
     if (statusNode) {
@@ -1791,7 +2041,10 @@ async function initConfigPage() {
           return;
         }
         const profile = getActiveProfile();
-        const ok = window.confirm(`Удалить профиль "${profile.name}"?`);
+        const ok = await confirmDialog(
+          `Удалить профиль "${profile.name}"?`,
+          "Все роутеры внутри профиля также будут удалены из базы.",
+        );
         if (!ok) return;
         try {
           await apiFetch(`/api/profiles/${profile.id}`, { method: "DELETE" });
@@ -1862,7 +2115,10 @@ async function initConfigPage() {
         }
         const router = getActiveRouter();
         if (!router) return;
-        const ok = window.confirm(`Удалить роутер "${router.name || router.values?.routerName}"?`);
+        const ok = await confirmDialog(
+          `Удалить роутер "${router.name || router.values?.routerName}"?`,
+          "Связанные VPN пользователи будут удалены из chap-secrets (если не используются другими роутерами).",
+        );
         if (!ok) return;
         try {
           await apiFetch(`/api/profiles/${profile.id}/routers/${router.id}`, { method: "DELETE" });

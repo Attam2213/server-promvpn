@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import ipaddress
 from pathlib import Path
 
 
@@ -15,6 +16,8 @@ NETMASK_PREFIX_MAP = {
     "255.255.255.248": 29,
     "255.255.255.252": 30,
 }
+
+_MT_UNSAFE_CHARS = set(" \t\r\n\"';\\$`")
 
 
 class ConfigGenerator:
@@ -101,14 +104,16 @@ class ConfigGenerator:
             if is_empty and default is not None:
                 merged[field_id] = default
 
-        enable_l2tp = merged.get("enableL2tp")
-        enable_sstp = merged.get("enableSstp")
-        l2tp_off = enable_l2tp is False
-        sstp_off = enable_sstp is False
-        if (l2tp_off and not sstp_off) or (sstp_off and not l2tp_off):
-            merged["enableL2tp"] = True
-            merged["enableSstp"] = True
         return merged
+
+    @staticmethod
+    def _cidr_networks_overlap(net1: str, net2: str) -> bool:
+        try:
+            a = ipaddress.ip_network(net1, strict=False)
+            b = ipaddress.ip_network(net2, strict=False)
+            return a.overlaps(b)
+        except Exception:
+            return False
 
     def validate(self, values: dict) -> dict:
         values = self._apply_schema_defaults(values)
@@ -233,6 +238,43 @@ class ConfigGenerator:
         extra_routes = self.parse_lines(values.get("extraRoutes", ""))
         if len(extra_routes) > 0 and not all(self.is_cidr(r) for r in extra_routes):
             errors["extraRoutes"] = "Каждая строка должна быть в формате 192.168.1.0/24."
+
+        lan_octet = values.get("lanOctet")
+        if isinstance(lan_octet, int) and 1 <= lan_octet <= 254:
+            lan_net = f"192.168.{lan_octet}.0/24"
+            prometey_octet = values.get("prometeyOctet")
+            for key, label in (
+                ("requiredRoutePrimary", "Обязательный маршрут (primary)"),
+                ("requiredRouteSecondary", "Обязательный маршрут (secondary)"),
+                ("homeRoute", "Домашний маршрут"),
+            ):
+                route_val = values.get(key)
+                if route_val and self.is_cidr(route_val):
+                    if self._cidr_networks_overlap(lan_net, route_val):
+                        errors[key] = (
+                            f"{label} {route_val} пересекается с LAN подсетью "
+                            f"роутера {lan_net}. Используйте другой диапазон."
+                        )
+            if isinstance(prometey_octet, int) and 1 <= prometey_octet <= 254:
+                prometey_net = f"192.168.{prometey_octet}.0/24"
+                if self._cidr_networks_overlap(lan_net, prometey_net):
+                    errors["prometeyOctet"] = (
+                        f"Подсеть Prometey {prometey_net} совпадает/пересекается с "
+                        f"LAN {lan_net}. Задайте другой prometeyOctet или lanOctet."
+                    )
+
+        admin_user = values.get("routerAdminUser")
+        if not admin_user or not str(admin_user).strip():
+            errors["routerAdminUser"] = "Поле обязательно."
+        admin_pw = values.get("routerAdminPassword")
+        if not admin_pw or str(admin_pw).strip() == "":
+            errors["routerAdminPassword"] = "Задайте пароль для входа в MikroTik (Winbox)."
+        else:
+            pw_str = str(admin_pw)
+            if len(pw_str) < 10:
+                errors["routerAdminPassword"] = "Минимум 10 символов (иначе слишком слабый для admin)."
+            elif len(set(pw_str)) < 4:
+                errors["routerAdminPassword"] = "Пароль слишком простой (используйте не менее 4 разных символов)."
 
         return {
             "valid": len(errors) == 0,
@@ -369,6 +411,37 @@ class ConfigGenerator:
             config,
             count=1,
         )
+
+        admin_user = str(values.get("routerAdminUser") or "admin").strip() or "admin"
+        admin_pw = str(values.get("routerAdminPassword") or "").strip()
+        unsafe = any(ch in _MT_UNSAFE_CHARS for ch in admin_pw)
+        if admin_pw and not unsafe:
+            users_block = (
+                f"/user{newline}"
+                f"remove [find]{newline}"
+                f"add name={admin_user} password=\"{admin_pw}\" group=full "
+                f"comment=admin disabled=no{newline}"
+            )
+        elif admin_pw and unsafe:
+            import warnings as _w
+            _w.warn(
+                f"routerAdminPassword содержит небезопасные для RouterOS .rsc символы — "
+                f"пользователь {admin_user} будет создан БЕЗ пароля! Смените пароль вручную "
+                f"через Winbox после импорта."
+            )
+            users_block = (
+                f"/user{newline}"
+                f"remove [find]{newline}"
+                f"add name={admin_user} group=full comment=admin disabled=no{newline}"
+            )
+        else:
+            users_block = (
+                f"/user{newline}"
+                f"remove [find]{newline}"
+                f"add name={admin_user} group=full comment=admin disabled=no{newline}"
+            )
+        stripped = config.rstrip()
+        config = stripped + newline + newline + users_block
 
         return self._strip_comment_lines(config)
 

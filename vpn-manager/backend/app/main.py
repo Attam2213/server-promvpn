@@ -1,5 +1,8 @@
 import os
 import sys
+import socket
+import subprocess
+import shutil
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -14,7 +17,8 @@ except Exception:
 
 from .database import Base, engine, SessionLocal
 from .auth import get_password_hash
-from .models import User
+from .models import User, Router, VpnSessions
+from .config import VPN_PUBLIC_IP, VPN_SSTP_PORT, VPN_L2TP_PORT
 
 from .routers.auth import router as auth_router
 from .routers.profiles import router as profiles_router
@@ -60,28 +64,22 @@ _create_default_admin()
 app = FastAPI(
     title="VPN VDS Manager API",
     description="Менеджер VPN и конфигураций MikroTik (L2TP + SSTP)",
-    version="1.0.1",
+    version="1.2.0",
 )
+
 
 @app.middleware("http")
 async def add_cache_headers(request: Request, call_next):
     response = await call_next(request)
-    if isinstance(response, Response):
-        path = request.url.path.lower()
-        query = request.url.query or ""
-        has_cache_key = "v=" in query
-        if path.endswith(".html") or (not any(path.endswith(ext) for ext in (".js",".css",".png",".jpg",".jpeg",".gif",".svg",".ico",".woff",".woff2",".ttf")) and path.startswith(("/login","/dashboard","/config","/"))):
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-        elif path.endswith((".js", ".css")):
-            if has_cache_key:
-                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-            else:
-                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
-                response.headers["Pragma"] = "no-cache"
-                response.headers["Expires"] = "0"
+    path = request.url.path.lower()
+    if path.endswith((".css", ".js", ".png", ".jpg", ".jpeg", ".svg", ".ico", ".woff2", ".woff", ".ttf")):
+        response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    elif path.endswith(".html") or path in ("/", "/login", "/dashboard", "/config"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     return response
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -91,56 +89,141 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router)
-app.include_router(profiles_router)
-app.include_router(routers_api_router)
-app.include_router(monitoring_router)
-app.include_router(configs_router)
-app.include_router(vpn_router)
 
-def _resolve_frontend_dir() -> Path:
-    candidates = []
-    env_frontend = os.environ.get("FRONTEND_DIR", "").strip()
-    if env_frontend:
-        candidates.append(Path(env_frontend))
-    this_file = Path(__file__).resolve()
-    candidates.append(this_file.parent.parent.parent / "frontend")
-    candidates.append(this_file.parent.parent / "frontend")
-    candidates.append(Path.cwd().resolve() / "frontend")
-    candidates.append(Path("/opt/server-promvpn/vpn-manager/frontend"))
-    candidates.append(Path("/opt/vpn-manager/frontend"))
-    for p in candidates:
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(profiles_router, prefix="/api/profiles", tags=["profiles"])
+app.include_router(routers_api_router, prefix="/api", tags=["routers"])
+app.include_router(monitoring_router, prefix="/api/monitoring", tags=["monitoring"])
+app.include_router(configs_router, prefix="/api/configs", tags=["configs"])
+app.include_router(vpn_router, prefix="/api/vpn", tags=["vpn"])
+
+
+def _tcp_probe(host: str, port: int, timeout: float = 1.5) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def _run(cmd: list, timeout: int = 3) -> tuple[int, str, str]:
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+        return p.returncode, (p.stdout or "").strip(), (p.stderr or "").strip()
+    except Exception as e:
+        return -1, "", str(e)
+
+
+def _deep_health() -> dict:
+    info = {}
+    try:
+        db = SessionLocal()
         try:
-            if p and p.exists() and p.is_dir() and (p / "login.html").exists():
-                return p
-        except Exception:
-            continue
-    return None
+            users = db.query(User).count()
+            routers = db.query(Router).count()
+            sessions = db.query(VpnSessions).filter(VpnSessions.status == "active").count()
+            info["db_ok"] = True
+            info["users_count"] = users
+            info["routers_count"] = routers
+            info["active_sessions_db_count"] = sessions
+        finally:
+            db.close()
+    except Exception as e:
+        info["db_ok"] = False
+        info["db_error"] = str(e)[:200]
 
-FRONTEND_DIR = _resolve_frontend_dir()
-if FRONTEND_DIR:
-    print(f"[+] Frontend dir resolved: {FRONTEND_DIR}")
-else:
-    print("[!] Frontend dir not found — SPA routing disabled, API-only mode.")
+    info["accel_ctrl_2001_ok"] = (
+        shutil.which("accel-cmd") is not None and _tcp_probe("127.0.0.1", 2001, timeout=1.0)
+    )
+
+    info["xl2tpd_ctrl_ok"] = os.path.exists("/var/run/xl2tpd/l2tp-control") or _tcp_probe(
+        "127.0.0.1", 1701, timeout=1.0
+    ) or shutil.which("xl2tpd-control") is not None
+
+    info["snat_vpn_public_ok"] = False
+    if VPN_PUBLIC_IP and shutil.which("iptables"):
+        try:
+            rc, out, _err = _run(
+                ["iptables", "-t", "nat", "-S", "POSTROUTING"],
+                timeout=4,
+            )
+            snat_markers = [
+                f"--to-source {VPN_PUBLIC_IP}",
+                f"--to-source {VPN_PUBLIC_IP}/32",
+            ]
+            info["snat_vpn_public_ok"] = (
+                rc == 0 and any(m in (out or "") for m in snat_markers)
+            )
+            info["snat_rule_sample"] = (
+                next((l for l in (out or "").splitlines() if "POSTROUTING" in l or "SNAT" in l or "MASQUERADE" in l), None)
+            )[:200] if info["snat_vpn_public_ok"] or out else None
+        except Exception:
+            pass
+
+    chap_path = "/etc/ppp/chap-secrets"
+    if os.path.exists(chap_path):
+        try:
+            sz = os.path.getsize(chap_path)
+            with open(chap_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = [ln for ln in f.readlines() if ln.strip() and not ln.strip().startswith("#")]
+            info["chap_secrets_ok"] = True
+            info["chap_secrets_size"] = sz
+            info["chap_secrets_entries"] = len(lines)
+        except Exception as e:
+            info["chap_secrets_ok"] = False
+            info["chap_secrets_error"] = str(e)[:200]
+    else:
+        info["chap_secrets_ok"] = None
+
+    info["services"] = {}
+    for svc in ("vpn-manager", "accel-ppp", "xl2tpd"):
+        if shutil.which("systemctl"):
+            rc, _o, _e = _run(["systemctl", "is-active", svc], timeout=3)
+            info["services"][svc] = "active" if rc == 0 else "inactive"
+        else:
+            info["services"][svc] = "unknown"
+
+    info["ports"] = {
+        f"sstp_{VPN_SSTP_PORT}": _tcp_probe("0.0.0.0" if False else "127.0.0.1", int(VPN_SSTP_PORT or 443), timeout=1.0),
+        f"mgmt_8000": True,
+        f"l2tp_{VPN_L2TP_PORT}": _tcp_probe("127.0.0.1", int(VPN_L2TP_PORT or 1701), timeout=1.0),
+    }
+    return info
+
 
 @app.get("/api/health")
 async def health_check():
-    info = {
+    base = {
         "status": "ok",
         "service": "vpn-vds-manager",
         "frontend_dir": str(FRONTEND_DIR) if FRONTEND_DIR else None,
     }
-    return info
+    try:
+        deep = _deep_health()
+    except Exception as e:
+        deep = {"error": str(e)[:200]}
+    base["checks"] = deep
+    all_green = (
+        deep.get("db_ok") is not False
+        and deep.get("chap_secrets_ok") is not False
+    )
+    base["status"] = "ok" if all_green else "degraded"
+    return base
 
 
 @app.get("/api/info")
 async def api_info():
     return {
         "name": "VPN VDS Manager API",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "auth_required": True,
         "docs": "/docs",
         "frontend_dir": str(FRONTEND_DIR) if FRONTEND_DIR else None,
+        "vpn": {
+            "public_ip": VPN_PUBLIC_IP,
+            "l2tp_port": VPN_L2TP_PORT,
+            "sstp_port": VPN_SSTP_PORT,
+        },
         "endpoints": {
             "auth": [
                 "POST /api/auth/login (OAuth2 form)",
@@ -178,6 +261,39 @@ async def api_info():
             ],
         },
     }
+
+
+def _resolve_frontend_dir() -> Path:
+    candidates = []
+    env_fe = os.environ.get("FRONTEND_DIR")
+    if env_fe:
+        candidates.append(Path(env_fe))
+    here = Path(__file__).resolve().parent
+    candidates.append(here.parent.parent / "frontend")
+    candidates.append(Path("/opt/server-promvpn/vpn-manager/frontend"))
+    candidates.append(Path("/srv/vpn-manager/frontend"))
+    candidates.append(Path.cwd() / "frontend")
+    candidates.append(Path.cwd() / "vpn-manager" / "frontend")
+    for c in candidates:
+        try:
+            if c.exists() and c.is_dir():
+                idx = c / "index.html"
+                log = c / "login.html"
+                dash = c / "dashboard.html"
+                if idx.exists() and log.exists() and dash.exists():
+                    return c
+        except Exception:
+            continue
+    return candidates[0] if candidates else Path("./frontend")
+
+
+FRONTEND_DIR: Path | None = None
+try:
+    FRONTEND_DIR = _resolve_frontend_dir()
+    print(f"[+] Frontend dir resolved: {FRONTEND_DIR}")
+except Exception as e:
+    print(f"[!] Frontend dir resolve failed: {e}")
+    FRONTEND_DIR = None
 
 
 if FRONTEND_DIR and _STATIC_AVAILABLE:

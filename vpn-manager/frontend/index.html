@@ -9,7 +9,7 @@
     <title>VPN/VDS Manager - Конфиг</title>
     <script>
       (function(){
-        var FORCE = "20260902a";
+        var FORCE = "20260902b";
         try {
           var u = new URL(window.location.href);
           if (u.searchParams.get("v") !== FORCE) {
@@ -30,7 +30,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="styles.css?v=20260902a" />
+    <link rel="stylesheet" href="styles.css?v=20260902b" />
   </head>
   <body>
     <div class="layout">
@@ -86,6 +86,9 @@
             </div>
 
             <div class="preview-actions">
+              <button type="button" id="copyRscButton" class="btn btn-secondary">
+                📋 Скопировать RSC
+              </button>
               <button type="button" id="download-preview-btn" class="btn btn-primary">
                 Скачать `.rsc` файл
               </button>
@@ -230,6 +233,6 @@
       </div>
     </div>
 
-    <script defer src="app.js?v=20260902a"></script>
+    <script defer src="app.js?v=20260902b"></script>
   </body>
 </html>

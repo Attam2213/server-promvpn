@@ -9,7 +9,7 @@
     <title>VPN/VDS Manager - Вход</title>
     <script>
       (function(){
-        var FORCE = "20260902a";
+        var FORCE = "20260902b";
         try {
           var u = new URL(window.location.href);
           if (u.searchParams.get("v") !== FORCE) {
@@ -30,7 +30,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="styles.css?v=20260902a" />
+    <link rel="stylesheet" href="styles.css?v=20260902b" />
   </head>
   <body>
     <div class="login-layout">
@@ -59,15 +59,18 @@
 
           <label class="field">
             <span class="field-label">Пароль</span>
-            <input
-              class="field-input"
-              type="password"
-              id="password"
-              name="password"
-              placeholder="Введите пароль"
-              autocomplete="current-password"
-              required
-            />
+            <div class="pw-wrap">
+              <input
+                class="field-input"
+                type="password"
+                id="password"
+                name="password"
+                placeholder="Введите пароль"
+                autocomplete="current-password"
+                required
+              />
+              <button type="button" id="pw-toggle" class="pw-toggle" aria-label="Показать пароль" title="Показать/скрыть пароль">👁</button>
+            </div>
             <span class="field-error" data-error-for="password"></span>
           </label>
 
@@ -80,6 +83,6 @@
       </div>
     </div>
 
-    <script defer src="app.js?v=20260902a"></script>
+    <script defer src="app.js?v=20260902b"></script>
   </body>
 </html>
